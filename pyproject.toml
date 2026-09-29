@@ -1,0 +1,31 @@
+[project]
+name = "kavi"
+version = "0.1.0"
+description = "Kavi — a literal Pāḷi-to-English translator: Digital Pāḷi Dictionary word analysis, Kaccāyana sandhi resolution, MITRA-QWEN translation and instruction-tuned review, all running locally under MLX."
+readme = "README.md"
+license = "CC0-1.0"
+authors = [
+    { name = "Christine Tham", email = "chris.tham@hellotham.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "mlx-lm>=0.31.3",
+    "streamlit>=1.40",
+    "huggingface_hub>=0.30",
+]
+
+[project.scripts]
+kavi = "kavi.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/ChristineTham/kavi"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

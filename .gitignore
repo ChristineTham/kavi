@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+
+# Local data: the DPD database and deconstructor output are downloaded or linked, never committed
+data/
+*.sqlite
+*.db
+
+# Caches and runtime output
+.cache/
+out/
+.streamlit/secrets.toml

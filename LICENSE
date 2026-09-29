@@ -1,0 +1,16 @@
+CC0 1.0 Universal (CC0 1.0) Public Domain Dedication
+https://creativecommons.org/publicdomain/zero/1.0/
+
+The code, documentation, tests and sample outputs in this repository are dedicated to the public domain
+under CC0 1.0 by Christine Tham. To the extent possible under law, the author has waived all copyright
+and related or neighbouring rights to this work.
+
+Material this software consults or reproduces keeps its own terms and is not covered by the dedication:
+
+- The Digital Pāḷi Dictionary (dpd.db, deconstructor output) by Bodhirasa Bhikkhu is CC BY-NC-SA 4.0
+  (https://www.dpdict.net/). It is consulted at run time and not redistributed here.
+- MITRA-QWEN (buddhist-nlp/mitra-qwen35-translate, mitra-qwen35-it) by the Dharmamitra project is Apache-2.0;
+  if you publish its output, the authors ask for a credit to https://dharmamitra.org.
+- The Pāḷi sample texts are the Chaṭṭha Saṅgāyana edition as published at https://tipitaka2500.github.io.
+- The reference translation in tests/samples/sn12-1.reference.md is by Christine Tham
+  (https://christham.net/buddhavacana/), included by the author.

@@ -1,0 +1,55 @@
+# Default glossary: Pāḷi technical terms kept in Pāḷi with an English gloss on first use,
+# in the form `term` (gloss). Lines are "stem: gloss | other renderings that must give way to the gloss";
+# a leading # is a comment.
+# The equivalents follow Chris Tham's translations at https://christham.net/buddhavacana/.
+paṭiccasamuppāda: dependent origination | dependent arising, conditioned arising, dependent co-arising, causal origination
+avijjā: ignorance | not knowing, unknowing, delusion
+saṅkhāra: mental construction | volitional formation, mental fabrication, mental formation, volitional activity
+viññāṇa: consciousness
+nāmarūpa: phenomenal objects | name and form, mind and body, mentality-materiality, name-and-form
+saḷāyatana: the six sense bases | six sense fields, six sense spheres, sixfold sense base, six senses
+phassa: contact
+vedanā: feeling | sensation
+taṇhā: craving | thirst, desire
+upādāna: clinging | grasping, attachment, fuel
+bhava: existence | becoming, being
+jāti: birth
+jarāmaraṇa: old age and death | aging and death, ageing and death, old-age-and-death, decay and death
+dukkha: suffering
+domanassa: displeasure
+upāyāsa: despair
+dukkhakkhandha: mass of suffering
+nirodha: cessation
+samudaya: origin
+nibbāna: extinguishment
+dhamma: teaching
+kamma: action
+khandha: aggregate
+upādānakkhandha: aggregate of clinging
+jhāna: meditative absorption
+samādhi: concentration
+paññā: wisdom
+sīla: virtue
+sati: mindfulness
+āsava: defilement
+kilesa: defilement
+nīvaraṇa: hindrance
+bojjhaṅga: factor of awakening
+indriya: faculty
+magga: path
+sacca: truth
+ariyasacca: noble truth
+anicca: impermanent
+anattā: not-self
+saṃsāra: cycle of rebirth
+mettā: loving-kindness
+karuṇā: compassion
+muditā: gladness
+upekkhā: equanimity
+sotāpanna: stream-enterer
+arahant: perfected one
+tathāgata: thus-gone one
+citta: mind
+cetasika: mental factor
+saññā: perception
+āyatana: sense base
