@@ -84,6 +84,39 @@ Roadmap for the default configuration, in the order the whole-text runs suggest:
 4. homonym choice — when the DPD lists several headwords for a form, prefer the one whose part of speech fits the
    neighbouring words (`asati` the participle after a noun, not the verb "eats").
 
+## Interlinear translation
+
+`kavi translate text.md --interlinear` writes four lines for every sentence instead of a running translation, the
+form of the textbook's interlinear chapters:
+
+```
+1.2 ekaṁ samayaṁ bhagavā uruvelāyaṁ viharati najjā nerañjarāya tīre bodhirukkhamūle paṭhamābhisambuddho.  
+*️⃣🤟🚹⨀②(eka) 🚹⨀②(samaya) 🚹⨀①(bhagavant) 🚺⨀⑦(uruvelā) 🟢⨀🤟▶️(viharati) 🚺⨀⑥(nadī) 🚺⨀⑥(nerañjarā) 🚻⨀⑦(tīra) 🚻⨀⑦🆎(bodhirukkha+mūla) 🚹⨀①🆎(paṭhama+abhisambuddha)  
+one | time | the Bhagavā | at Uruvelā | dwells | of the river | Nerañjarā | on the bank | at the foot of the bodhi tree | first fully awakened  
+At one time the Bhagavā dwells at Uruvelā on the bank of the river Nerañjarā at the foot of the bodhi tree, first fully awakened.
+```
+
+1. the Pāḷi sentence, numbered by paragraph and sentence, or by SuttaCentral's segment numbers when
+   `--segments` gives the segment JSON (the API's `root_text` or a bilara root file);
+2. the analysis: one token per isolated word (sandhi resolved from the DPD's sandhi entries and the deconstructor,
+   `…n”ti` restored to `…ṁ ti`), in the textbook's symbols and order — a nominal's gender, number and ending with
+   its dictionary lemma, `🚹⨀①(bhagavant)`; a verb's voice, number, person and tense with its base verb,
+   `🟢⨀🤟▶️(viharati)`; pronouns `*️⃣` with their person (⚧ for `amha` and `tumha`); particles and adverbs `⏏️`, a
+   standalone prefix `🔼`; compounds `🆎(member+member)` from the DPD's compound analysis; participles, absolutives
+   and infinitives `🔽(affix)`; the niggahīta written `ṁ`;
+3. the glosses, one per token, separated by bars, with the punctuation carried along;
+4. the literal translation rearranged into a normal English sentence. A verse keeps one group of lines 1–3 per
+   line and gives the stanza's translation once, line by line.
+
+Lines 1–3 end with two spaces, Markdown's hard line break. The dictionary supplies every candidate parse of every
+word (`kavi.interlinear.candidates`), the model only chooses among them, glosses each word in the chosen form and
+translates the sentence, answering in JSON; a choice outside the candidates falls back to the first, so the
+analysis line never says what the DPD does not. The checker then applies the conventions (names, honorifics,
+glossary terms, particles, tense) to the translation line, and the glossary glosses to the gloss line. The model
+is the review model unless `--interlinear-model` names another; answers are cached in
+`~/.cache/kavi/interlinear.json`, so a formula repeated across suttas is computed once. `--report` writes every
+token's chosen parse with the number of alternatives and the model's raw answer.
+
 ## How it works
 
 1. **Segment** (`segment.py`): Markdown blocks; inline code, links, tags, footnotes and URLs become `%%n%%`

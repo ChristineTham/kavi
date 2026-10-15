@@ -2,6 +2,7 @@
 
     kavi translate text.md -o text.en.md        # translate a Markdown or plain-text file
     kavi translate --text "Namo tassa …"         # translate a string
+    kavi translate text.md --interlinear          # four lines per sentence: Pāḷi, analysis, glosses, translation
     echo "…" | kavi translate                    # or stdin
     kavi analyse "Ekaṃ samayaṃ bhagavā …"        # the DPD word-by-word table only
     kavi setup                                   # download and convert both MITRA models to MLX
@@ -89,10 +90,23 @@ def cmd_translate(args) -> int:
         inputs = [(f.read_text(encoding="utf-8"), str(f)) for f in files]
     else:
         inputs = [_read_input(args)]
+    segments = None
+    if args.interlinear:
+        from .interlinear import Interlinear, load_segments
+        if args.interlinear_model:
+            pool = ModelPool(s.translate_model, args.interlinear_model)
+        inter = Interlinear(s, dpd, pool, use_cache=not args.no_cache)
+        if args.segments:
+            segments = []
+            for raw in args.segments:
+                segments.extend(load_segments(Path(raw)))
     for text, name in inputs:
         if name:
             sys.stderr.write(f"== {name}\n")
-        result = tr.translate_markdown(text, review=s.max_rounds > 0)
+        if args.interlinear:
+            result = inter.translate_markdown(text, segments)
+        else:
+            result = tr.translate_markdown(text, review=s.max_rounds > 0)
         if args.out:
             out = Path(args.out)
             if out.is_dir() or (len(inputs) > 1):
@@ -102,7 +116,7 @@ def cmd_translate(args) -> int:
             sys.stderr.write(f"   -> {out}\n")
         else:
             print(result.markdown)
-        if args.table:
+        if args.table and hasattr(result, "table"):
             Path(args.table).write_text(result.table(), encoding="utf-8")
             sys.stderr.write(f"   word analysis -> {args.table}\n")
         if args.report:
@@ -253,6 +267,10 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--sentence-words", type=int, help="translate paragraphs longer than this sentence by sentence")
     t.add_argument("--batch-words", type=int, help="review batches up to this many Pāli words")
     t.add_argument("--glossary", help="file of 'term: gloss' lines to keep in Pāli with a gloss (default: the built-in doctrinal glossary; 'none' to disable)")
+    t.add_argument("--interlinear", action="store_true",
+                   help="interlinear output: for each sentence the Pāḷi, the analysis in the textbook's symbols, the glosses and the translation")
+    t.add_argument("--segments", nargs="*", help="SuttaCentral segment JSON file(s): the sentences and their numbers follow them")
+    t.add_argument("--interlinear-model", help="MLX path of the model that chooses the parses and glosses (default: the review model)")
     t.set_defaults(func=cmd_translate)
 
     a = sub.add_parser("analyse", aliases=["analyze"], help="DPD word-by-word analysis of a text")

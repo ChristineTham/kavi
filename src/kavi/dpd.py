@@ -93,6 +93,8 @@ class Headword:
     root_meaning: str
     family_set: str
     plus_case: str
+    compound_type: str = ""                            # dvanda, kammadhāraya, tappurisa … (DPD)
+    compound_construction: str = ""                    # the DPD's compound analysis, members with endings in <b>…</b>
     parses: list[str] = field(default_factory=list)   # raw DPD parses of the looked-up form, e.g. "masc nom sg"
     ebt_count: int = 0                                 # occurrences in the early Buddhist texts (DPD)
     kind: str = ""                                     # 'name' | 'honorific' | 'technical' | 'name?' | ''
@@ -242,7 +244,8 @@ class DPD:
         if hid not in self._hw:
             self._hw[hid] = self.con.execute(
                 "select id, lemma_1, pos, grammar, verb, meaning_1, meaning_lit, meaning_2, construction, root_key, "
-                "family_set, plus_case, ebt_count from dpd_headwords where id=?", (hid,)).fetchone()
+                "family_set, plus_case, ebt_count, compound_type, compound_construction from dpd_headwords where id=?",
+                (hid,)).fetchone()
         return self._hw[hid]
 
     def root(self, key: str):
@@ -292,6 +295,7 @@ class DPD:
                 meaning=meaning, meaning_lit=hw["meaning_lit"] or "", meaning_2=hw["meaning_2"] or "",
                 construction=(hw["construction"] or "").replace("\n", " | "), root=hw["root_key"] or "",
                 root_meaning=root_meaning, family_set=hw["family_set"] or "", plus_case=hw["plus_case"] or "",
+                compound_type=hw["compound_type"] or "", compound_construction=hw["compound_construction"] or "",
                 parses=my_parses, ebt_count=hw["ebt_count"] or 0,
                 kind=classify(stem, meaning, hw["family_set"] or ""),
             ))

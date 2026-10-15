@@ -189,7 +189,8 @@ def parse_markdown(text: str) -> list[Block]:
         j = i
         while j < len(lines):
             q2, r2 = split_quote(lines[j])
-            if q2 != quote or is_structural(r2) or HEADING_RE.match(r2) or LIST_RE.match(r2) or TABLE_RE.match(r2):
+            lazy = bool(group) and quote.strip() and q2 == "" and not is_structural(r2)   # a blockquote's lazy continuation line
+            if (q2 != quote and not lazy) or is_structural(r2) or HEADING_RE.match(r2) or LIST_RE.match(r2) or TABLE_RE.match(r2):
                 break
             if FENCE_RE.match(r2) or jsx_block_len(lines, j):
                 break

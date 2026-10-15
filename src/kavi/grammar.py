@@ -1,4 +1,6 @@
 
+"""The textbook's symbols for the Digital Pāḷi Dictionary's grammatical terms, and their explanations."""
+
 to_symbol = {
     "nom": "①",
     "acc": "②",
@@ -137,41 +139,40 @@ to_meaning = {
     "voc": "vocative",
 }
 
-def get_symbols(grammar: str):
+def get_symbols(grammar: str) -> str:
+    """The DPD's grammar abbreviations ("masc nom sg", "pr 3rd sg") as the textbook's symbols, in the DPD's order.
+    :mod:`kavi.interlinear` composes them in the textbook's own order (gender, number, ending; voice, number,
+    person, tense) from the parsed fields instead."""
     if grammar == "in comps":
         return "🆎"
+    return "".join(to_symbol.get(s, s) for s in grammar.split(" "))
 
-    chunks = grammar.split(' ')
-    return ''.join(map(lambda s: to_symbol.get(s, s), chunks))
 
-def get_explanation(grammar: str):
-    if grammar[1] == "unknown":
-        return f"?({grammar[0]})"
-    elif grammar == "particle":
+def get_explanation(grammar: str) -> str:
+    if grammar in ("particle", "ind"):
         return "indeclinable or particle"
+    return ", ".join(to_explanation.get(s, s) for s in grammar.split(" "))
 
-    chunks = grammar.split(' ')
-    return ', '.join(map(lambda s: to_explanation.get(s, s), chunks))
 
-def grammar_parse(grammar: list[tuple[str, str, str]]):
-    if grammar[1] == "unknown":
-        return f"?({grammar[0]})"
-    elif grammar[1] == "particle":
-        return f"🔼({grammar[0]})"
+def grammar_parse(grammar: tuple[str, str, str]) -> str:
+    """(lemma, part of speech, DPD grammar) -> symbols with the lemma: nouns in parentheses, verbs in brackets."""
+    lemma, pos, gram = grammar
+    if pos == "unknown":
+        return f"?({lemma})"
+    if pos in ("particle", "ind"):
+        return f"⏏️({lemma})"
+    desc = get_symbols(gram)
+    if pos == "noun":
+        return desc + f"({lemma})"
+    if pos == "verb":
+        return desc + f"[{lemma}]"
+    return desc + f"({pos}:{lemma})"
 
-    desc = get_symbols(grammar[2])
-    if grammar[1] == 'noun':
-        desc += f"({grammar[0]})"
-    elif grammar[1] == 'verb':
-        desc += f"[{grammar[0]}]"
-    else:
-        desc += f"({grammar[1]}:{grammar[0]})"
-    return desc
 
-def grammar_explain(grammar: list[tuple[str, str, str]]):
-    if grammar[1] == "unknown":
+def grammar_explain(grammar: tuple[str, str, str]) -> str:
+    lemma, pos, gram = grammar
+    if pos == "unknown":
         return "unknown, possibly a formal name"
-    elif grammar[1] == "particle":
+    if pos in ("particle", "ind"):
         return "particle or indeclinable"
-    else:
-        return f"{get_explanation(grammar[2])} of \"{grammar[0]}\" ({get_explanation(grammar[1])})"
+    return f"{get_explanation(gram)} of \"{lemma}\" ({get_explanation(pos)})"
