@@ -53,3 +53,14 @@ citta: mind
 cetasika: mental factor
 saññā: perception
 āyatana: sense base
+
+# the eightfold path, as the author's Pali Buddhist Texts chapter renders it
+sammādiṭṭhi: right view
+sammāsaṅkappa: right intention | right thought, right resolve
+sammāvācā: right speech
+sammākammanta: right conduct | right action
+sammāājīva: right way of living | right livelihood
+sammāvāyāma: right effort
+sammāsati: right mindfulness | right awareness
+sammāsamādhi: right concentration | right focus
+rūpa: form | materiality
