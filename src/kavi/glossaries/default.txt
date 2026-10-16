@@ -11,7 +11,7 @@ saḷāyatana: the six sense bases | six sense fields, six sense spheres, sixfol
 phassa: contact
 vedanā: feeling | sensation
 taṇhā: craving | thirst, desire
-upādāna: fuel | clinging, grasping, attachment
+upādāna: fuel | clinging, grasping, attachment   # Gombrich, What the Buddha Thought (2009), "Everything is burning"
 bhava: becoming | existence, being
 jāti: birth
 jarāmaraṇa: aging and death | old age and death, ageing and death, old-age-and-death, decay and death
@@ -25,13 +25,13 @@ nibbāna: extinguishment
 # an entry with no gloss marks a term whose rendering depends on context: the checker leaves it to the translator
 dhamma:    # principle, characteristic or phenomena by context (teaching, doctrine in some)
 kamma: action
-khandha: collection | aggregate, heap
-upādānakkhandha: collection of fuel | aggregate of clinging, aggregate of grasping, aggregate of attachment
+khandha: collection | aggregate, heap   # Gombrich, What the Buddha Thought (2009), "Everything is burning"
+upādānakkhandha: collection of fuel | aggregate of clinging, aggregate of grasping, aggregate of attachment   # Gombrich, What the Buddha Thought (2009), "Everything is burning"
 jhāna: meditative absorption
-samādhi: concentration
+samādhi: focus | concentration
 paññā: wisdom
 sīla: virtue
-sati: mindfulness
+sati: awareness | mindfulness
 āsava: defilement
 kilesa: defilement
 nīvaraṇa: hindrance
@@ -39,7 +39,7 @@ bojjhaṅga: factor of awakening
 indriya: faculty
 magga: path
 sacca: truth
-ariyasacca: realisation | noble truth, pure truth
+ariyasacca: realisation | noble truth, pure truth   # things to be realised: tidipa.github.io/Khandhaka/1.6#the-four-realisations
 anicca: impermanent
 anattā: not-self
 saṃsāra: cycle of rebirth
