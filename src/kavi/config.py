@@ -52,6 +52,7 @@ class Settings:
             if not line or line.startswith("#"):
                 continue
             term, _, rest = line.partition(":")
+            rest = rest.split("#")[0]                      # a trailing comment
             gloss, _, alts = rest.partition("|")
             if term.strip():
                 out.append((term.strip().strip("`"), gloss.strip(), [a.strip() for a in alts.split(",") if a.strip()]))
@@ -69,8 +70,8 @@ class Settings:
 
     @property
     def glossary_terms(self) -> list[str]:
-        """"term (gloss)" strings from the glossary file, if any."""
-        return [f"{t} ({g})" if g else t for t, g in self.glossary_map.items()]
+        """"term (gloss)" strings from the glossary file, if any (a term without a gloss is left to the translator)."""
+        return [f"{t} ({g})" for t, g in self.glossary_map.items() if g]
 
     @property
     def dpd_db(self) -> Path:

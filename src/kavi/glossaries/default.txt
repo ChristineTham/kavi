@@ -22,7 +22,8 @@ dukkhakkhandha: mass of suffering
 nirodha: cessation
 samudaya: origin
 nibbāna: extinguishment
-# dhamma: principle, characteristic or phenomena, by context (teaching, doctrine in some): not enforced
+# an entry with no gloss marks a term whose rendering depends on context: the checker leaves it to the translator
+dhamma:    # principle, characteristic or phenomena by context (teaching, doctrine in some)
 kamma: action
 khandha: collection | aggregate, heap
 upādānakkhandha: collection of fuel | aggregate of clinging, aggregate of grasping, aggregate of attachment
@@ -56,10 +57,10 @@ saññā: apperception | perception, recognition
 
 # the eightfold path, as the author's Pali Buddhist Texts chapter renders it
 sammādiṭṭhi: right view
-sammāsaṅkappa: right intention | right thought, right resolve
+sammāsaṅkappa: right resolve | right intention, right thought
 sammāvācā: right speech
-sammākammanta: right conduct | right action
-sammāājīva: right way of living | right livelihood
+sammākammanta: right action | right conduct
+sammāājīva: right livelihood | right way of living
 sammāvāyāma: right effort
 sammāsati: right awareness | right mindfulness
 sammāsamādhi: right focus | right concentration

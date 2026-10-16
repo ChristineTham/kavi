@@ -55,7 +55,7 @@ def test_tense_and_heading(dpd):
     assert fixed3 == "2.1 `Paṭiccasamuppāda` (dependent origination)"
     an3 = analyse_text(dpd, "Etassa dhammassa ananubodhā saṃsāraṃ nātivattati.")
     fixed4, _ = lint(an3, "Through non-comprehension of this teaching it does not transcend the cycle of rebirth.", s.glossary_map)
-    assert "`dhamma` (teaching)" in fixed4 and "`saṃsāraṃ` (cycle of rebirth)" in fixed4
+    assert "this teaching" in fixed4 and "`saṃsāraṃ` (cycle of rebirth)" in fixed4      # dhamma is left to the translator
 
 
 def test_italic_pali_duplicates(dpd):
@@ -74,7 +74,10 @@ def test_tense_check_skips_ambiguous_verbs(dpd):
 def test_bare_stem_gets_gloss(dpd):
     an = analyse_text(dpd, "Etassa dhammassa ananubodhā saṃsāraṃ nātivattati.")
     fixed, _ = lint(an, "Through non-comprehension of this Dhamma it does not transcend the cycle of saṃsāra.", s.glossary_map)
-    assert "this `dhamma` (teaching)" in fixed and "`saṃsāra` (cycle of rebirth)" in fixed
+    assert "this Dhamma" in fixed and "`saṃsāra` (cycle of rebirth)" in fixed             # dhamma stays as rendered
+    an2 = analyse_text(dpd, "Pañca khandhā.")
+    fixed2, _ = lint(an2, "The five khandha.", s.glossary_map)
+    assert "`khandha` (collection)" in fixed2
 
 
 

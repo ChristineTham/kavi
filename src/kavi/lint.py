@@ -112,7 +112,7 @@ def lint(analyses: list[Analysis], translation: str, glossary: dict[str, str] | 
     # glossary terms inside compounds (nāmarūpanirodho) also fix the rendering of the term wherever it appears
     source_keys = " ".join(a.key for a in analyses)
     for stem, gloss in glossary.items():
-        if stem[:-1] in source_keys:
+        if gloss and stem[:-1] in source_keys:
             others = [v for v in alternatives.get(stem, []) if v.lower() != gloss.lower() and v.lower() not in gloss.lower()]
             hit = _replace_english(text, _plural_variants(others), gloss, apply, every=True, keep_article=True, plural_aware=True)
             if hit:
@@ -125,7 +125,10 @@ def lint(analyses: list[Analysis], translation: str, glossary: dict[str, str] | 
         seen.add(a.key)
         h = a.governing(glossary)
         surface = a.surface.strip("’'")
-        kind = "technical" if h.stem in glossary else h.kind
+        gstem = _glossary_stem(h, glossary)
+        if gstem in glossary and not glossary[gstem]:
+            continue                                   # a context-dependent term (dhamma): the translator's rendering stands
+        kind = "technical" if gstem in glossary else h.kind
         if kind == "name":
             stem = h.stem.capitalize()
             hit = _replace_english(text, english_variants(h, a.headwords), stem, apply, every=True)
@@ -147,9 +150,9 @@ def lint(analyses: list[Analysis], translation: str, glossary: dict[str, str] | 
                 findings.append(Finding(surface, f"an honorific ({h.meaning.split(';')[0]}) does not appear untranslated",
                                         f"put '{form}' in place of whatever English stands for it"))
         elif kind == "technical":
-            gloss = glossary.get(h.stem) or (h.meaning or h.meaning_2).split(";")[0].strip()
-            form = term_form(h.stem, surface, h.parses)
-            if h.stem in glossary:
+            gloss = glossary.get(gstem) or (h.meaning or h.meaning_2).split(";")[0].strip()
+            form = term_form(gstem, surface, h.parses)
+            if gstem in glossary:
                 # every other rendering of a glossary term (the DPD's "name and form" for nāmarūpa) becomes the gloss
                 others = [v for v in _plural_variants(english_variants(h)) if v.lower() != gloss.lower()
                           and not v.lower().startswith(gloss.lower()) and v.lower() not in gloss.lower()]
@@ -158,30 +161,30 @@ def lint(analyses: list[Analysis], translation: str, glossary: dict[str, str] | 
                     text, phrase = hit
                     findings.append(Finding(surface, f"glossary term rendered as '{phrase}'",
                                             f"replaced by '{gloss}'" if apply else f"replace by '{gloss}'", "fix" if apply else "ask"))
-            if h.stem in glossed:
+            if gstem in glossed:
                 continue
-            if re.search(r"`" + re.escape(h.stem[:-1]) + r"[^`]*`", text, re.I):
-                glossed.add(h.stem)
+            if re.search(r"`" + re.escape(gstem[:-1]) + r"[^`]*`", text, re.I):
+                glossed.add(gstem)
                 continue
-            variants = _plural_variants([gloss] + english_variants(h)) if h.stem in glossary else _plural_variants(english_variants(h))
+            variants = _plural_variants([gloss] + english_variants(h)) if gstem in glossary else _plural_variants(english_variants(h))
             hit = _replace_english(text, variants, None, apply, gloss_for=form)
             # the word as it stands, or its stem (a model that writes "this Dhamma" or "the cycle of saṃsāra")
-            bare = re.compile(r"(?<![`\w])(?:" + re.escape(surface) + "|" + re.escape(h.stem) + r")(?![`\w])", re.I)
+            bare = re.compile(r"(?<![`\w])(?:" + re.escape(surface) + "|" + re.escape(gstem) + r")(?![`\w])", re.I)
             if hit:
                 text, phrase = hit
-                glossed.add(h.stem)
+                glossed.add(gstem)
                 findings.append(Finding(surface, f"technical term rendered as plain '{phrase}'",
                                         f"written as `{form}` ({phrase}) on first use" if apply else f"write `{form}` ({phrase}) on first use", "fix" if apply else "ask"))
             elif next((mm for mm in bare.finditer(text) if not _inside(mm.start(), _protected(text))), None):
                 # the Pāḷi word stands untranslated (a title, or a model that kept it): give it the term form
                 if apply:
                     m = next(mm for mm in bare.finditer(text) if not _inside(mm.start(), _protected(text)))
-                    shown = form if m.group(0).lower() == surface.lower() else h.stem
+                    shown = form if m.group(0).lower() == surface.lower() else gstem
                     text = text[: m.start()] + f"`{shown}` ({gloss})" + text[m.end():]
-                glossed.add(h.stem)
+                glossed.add(gstem)
                 findings.append(Finding(surface, "technical term left bare", f"written as `{form}` ({gloss})" if apply else f"write `{form}` ({gloss})",
                                         "fix" if apply else "ask"))
-            elif h.stem in glossary:
+            elif gstem in glossary:
                 findings.append(Finding(surface, f"technical term ({gloss}) not shown in the `word` (gloss) form",
                                         f"write it as `{form}` ({gloss}) on its first occurrence, then '{gloss}'"))
         elif a.key in PARTICLES and h.pos == "ind":
@@ -214,6 +217,25 @@ def lint(analyses: list[Analysis], translation: str, glossary: dict[str, str] | 
                                             f"use the present: '{eng[0]}'"))
     text = normalise_terms(text)
     return text, findings
+
+
+OF_BASE_RE = re.compile(r"\bof (\S+?)(?:,|$)")
+
+
+def _glossary_stem(h: Headword, glossary: dict[str, str]) -> str:
+    """The stem to look a headword up by in the glossary: its own, or the base lemma of an irregular-form entry
+    ("masc, nom pl of khandha" for khandhā) when that is the glossary's term."""
+    if h.stem in glossary:
+        return h.stem
+    candidates = []
+    m = OF_BASE_RE.search(h.grammar or "")
+    if m:
+        candidates.append(re.sub(r" \d[\d.]*$", "", m.group(1)))
+    candidates.append(re.sub(r"ā$", "a", re.sub(r"ī$", "i", re.sub(r"ū$", "u", h.stem))))     # khandhā: the plural-only entry
+    for c in candidates:
+        if c in glossary:
+            return c
+    return h.stem
 
 
 def _same_stem(a: str, b: str) -> bool:
