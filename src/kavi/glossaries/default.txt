@@ -43,10 +43,10 @@ ariyasacca: realisation | noble truth, pure truth   # things to be realised: tid
 anicca: impermanent
 anattā: not-self
 saṃsāra: cycle of rebirth
-mettā: loving-kindness
-karuṇā: compassion
-muditā: gladness
-upekkhā: equanimity
+mettā: goodwill | friendliness, benevolence, loving-kindness   # DPD
+karuṇā: compassion | sympathy, kindness, pity   # DPD
+muditā: happiness for others | appreciation, sympathetic joy, gladness   # DPD
+upekkhā: equanimity | mental balance, mental poise, non-reactivity   # DPD
 sotāpanna: stream-enterer
 arahant: liberated one | perfected one, awakened being, worthy one
 tathāgata: thus-gone one
