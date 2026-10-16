@@ -22,10 +22,10 @@ dukkhakkhandha: mass of suffering
 nirodha: cessation
 samudaya: origin
 nibbāna: extinguishment
-dhamma: teaching
+# dhamma: principle, characteristic or phenomena, by context (teaching, doctrine in some): not enforced
 kamma: action
-khandha: aggregate
-upādānakkhandha: aggregate of clinging
+khandha: collection | aggregate, heap
+upādānakkhandha: collection of fuel | aggregate of clinging, aggregate of grasping, aggregate of attachment
 jhāna: meditative absorption
 samādhi: concentration
 paññā: wisdom
@@ -38,7 +38,7 @@ bojjhaṅga: factor of awakening
 indriya: faculty
 magga: path
 sacca: truth
-ariyasacca: noble truth
+ariyasacca: realisation | noble truth, pure truth
 anicca: impermanent
 anattā: not-self
 saṃsāra: cycle of rebirth
@@ -47,11 +47,11 @@ karuṇā: compassion
 muditā: gladness
 upekkhā: equanimity
 sotāpanna: stream-enterer
-arahant: perfected one
+arahant: liberated one | perfected one, awakened being, worthy one
 tathāgata: thus-gone one
 citta: mind
 cetasika: mental factor
-saññā: perception
+saññā: apperception | perception, recognition
 āyatana: sense base
 
 # the eightfold path, as the author's Pali Buddhist Texts chapter renders it
@@ -61,6 +61,6 @@ sammāvācā: right speech
 sammākammanta: right conduct | right action
 sammāājīva: right way of living | right livelihood
 sammāvāyāma: right effort
-sammāsati: right mindfulness | right awareness
-sammāsamādhi: right concentration | right focus
+sammāsati: right awareness | right mindfulness
+sammāsamādhi: right focus | right concentration
 rūpa: form | materiality
