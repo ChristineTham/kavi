@@ -12,7 +12,10 @@ phassa: contact
 vedanā: feeling | sensation
 taṇhā: craving | thirst, desire
 upādāna: fuel | clinging, grasping, attachment   # Gombrich, What the Buddha Thought (2009), "Everything is burning"
-bhava: becoming | existence, being
+bhava: existence | becoming, being, state of being
+# in the chain of dependent origination the links are of suffering (the author, 2026-10-26): "fuel for suffering", "the existence of
+# suffering", "the birth of suffering"; kāmabhava is "existence in the realm of sensual desire" (AN 3.76), not "desire for becoming"
+kāmabhava: existence in the realm of sensual desire | sensual existence, desire for becoming, desire for existence
 jāti: birth
 # in the liberation formula (akuppā me vimutti, ayamantimā jāti, natthi dāni punabbhavo; khīṇā jāti) jāti and punabbhava are
 # the birth and the appearing again of suffering, not a birth into future lives (the author, 2026-10-26): the translation adds "(of suffering)"
