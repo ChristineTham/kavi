@@ -84,3 +84,12 @@ sammāvāyāma: right effort
 sammāsati: right awareness | right mindfulness
 sammāsamādhi: right focus | right concentration
 rūpa: form | materiality
+# renderings confirmed in the textbook read-through of 2026-10-26
+ariya: noble | pure, holy
+ariyasāvaka: awakened disciple | noble disciple, pure disciple
+bhagavā: the Bhagavā | the Blessed One, the Fortunate One, the Bhagavant
+abhisambuddha: fully awakened | fully realised, fully enlightened, full understanding
+brahmacariya: the pure life | the holy life, the spiritual life, celibacy
+puthujjana: an ordinary person | a common worldling, a worldling
+pahīna: given up | abandoned
+nibbindati: gives up | is disenchanted, becomes dispassionate, is disgusted
