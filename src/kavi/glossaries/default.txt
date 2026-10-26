@@ -36,6 +36,11 @@ sati: awareness | mindfulness
 kilesa: defilement
 nīvaraṇa: hindrance
 bojjhaṅga: factor of awakening
+# "enlightenment" is avoided throughout: overloaded with spiritualism (the author, 2026-10-26)
+bodhi: awakening | enlightenment
+sambodhi: full awakening | enlightenment, supreme enlightenment, complete awakening
+sammāsambodhi: perfect awakening | perfect understanding, perfect enlightenment, supreme perfect enlightenment, full enlightenment
+abhiññā: experiential understanding | direct knowledge, higher knowledge, special knowledge, supernormal knowledge, superknowledge
 indriya: faculty
 magga: path
 sacca: truth
