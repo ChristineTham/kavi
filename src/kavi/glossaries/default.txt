@@ -14,6 +14,10 @@ taṇhā: craving | thirst, desire
 upādāna: fuel | clinging, grasping, attachment   # Gombrich, What the Buddha Thought (2009), "Everything is burning"
 bhava: becoming | existence, being
 jāti: birth
+# in the liberation formula (akuppā me vimutti, ayamantimā jāti, natthi dāni punabbhavo; khīṇā jāti) jāti and punabbhava are
+# the birth and the appearing again of suffering, not a birth into future lives (the author, 2026-10-26): the translation adds "(of suffering)"
+punabbhava: appearing again | rebirth, renewed existence, future life, future existence, re-becoming, being born again
+ponobbhavika: leading to renewed becoming | leading to rebirth, conducive to repeated becoming, leading to renewed existence
 jarāmaraṇa: aging and death | old age and death, ageing and death, old-age-and-death, decay and death
 dukkha: suffering
 domanassa: displeasure
