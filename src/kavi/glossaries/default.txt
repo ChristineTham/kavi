@@ -3,6 +3,8 @@
 # a leading # is a comment.
 # The equivalents follow Chris Tham's translations at https://christham.net/buddhavacana/.
 paṭiccasamuppāda: dependent origination | dependent arising, conditioned arising, dependent co-arising, causal origination
+# paccaya is "cause", never "condition" (the author, 2026-10-26): avijjāpaccayā saṅkhārā "with ignorance as cause, mental constructions [arise]"
+paccaya: cause | condition, requisite, basis, support
 avijjā: ignorance | not knowing, unknowing, delusion
 saṅkhāra: mental construction | volitional formation, mental fabrication, mental formation, volitional activity
 viññāṇa: consciousness
