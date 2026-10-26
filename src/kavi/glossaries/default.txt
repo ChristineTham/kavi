@@ -22,7 +22,9 @@ jāti: birth
 # in the liberation formula (akuppā me vimutti, ayamantimā jāti, natthi dāni punabbhavo; khīṇā jāti) jāti and punabbhava are
 # the birth and the appearing again of suffering, not a birth into future lives (the author, 2026-10-26): the translation adds "(of suffering)"
 punabbhava: appearing again | rebirth, renewed existence, future life, future existence, re-becoming, being born again
-ponobbhavika: leading to renewed becoming | leading to rebirth, conducive to repeated becoming, leading to renewed existence
+ponobbhavika: leading to renewed existence | leading to rebirth, conducive to repeated becoming, leading to renewed becoming
+bhavataṇhā: craving for existence | craving for becoming, craving to be, craving for continued existence
+vibhavataṇhā: craving for non-existence | craving for non-becoming, craving for annihilation, craving to end existence
 jarāmaraṇa: aging and death | old age and death, ageing and death, old-age-and-death, decay and death
 dukkha: suffering
 domanassa: displeasure
