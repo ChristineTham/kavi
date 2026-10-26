@@ -57,7 +57,10 @@ magga: path
 sacca: truth
 ariyasacca: realisation | noble truth, pure truth   # things to be realised: tidipa.github.io/Khandhaka/1.6#the-four-realisations
 anicca: impermanent
-anattā: not-self
+# attā is not just "self" but the eternal, permanent self independent of the body, the Ātman of Hinduism, which the Buddha
+# repudiates: our sense of self is impermanent and constructed, with no independent existence (the author, 2026-10-26; chapter 7's note)
+attā: self | soul, spirit, essence, ego
+anattā: not-self | non-self, no-self, impersonal, without self, selfless
 saṃsāra: cycle of rebirth
 mettā: goodwill | friendliness, benevolence, loving-kindness   # DPD
 karuṇā: compassion | sympathy, kindness, pity   # DPD
