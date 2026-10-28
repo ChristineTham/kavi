@@ -15,8 +15,9 @@ vedanā: feeling | sensation
 taṇhā: craving | thirst, desire
 upādāna: fuel | clinging, grasping, attachment   # Gombrich, What the Buddha Thought (2009), "Everything is burning"
 bhava: existence | becoming, being, state of being
-# in the chain of dependent origination the links are of suffering (the author, 2026-10-26): "fuel for suffering", "the existence of
-# suffering", "the birth of suffering"; kāmabhava is "existence in the realm of sensual desire" (AN 3.76), not "desire for becoming"
+# in the chain of dependent origination (the author, 2026-10-27, textbook chapter 3 and Bonus 19): upādāna is "fuel for existence: the will to live",
+# bhava "existence (of a false perception of an eternal independent \"self\" (atta))", short form "existence (constructed self)", jāti "the birth (of suffering)";
+# this reading of bhava belongs to that chain alone; kāmabhava is "existence in the realm of sensual desire" (AN 3.76), not "desire for becoming"
 kāmabhava: existence in the realm of sensual desire | sensual existence, desire for becoming, desire for existence
 jāti: birth
 # in the liberation formula (akuppā me vimutti, ayamantimā jāti, natthi dāni punabbhavo; khīṇā jāti) jāti and punabbhava are
@@ -25,7 +26,7 @@ punabbhava: appearing again | rebirth, renewed existence, future life, future ex
 ponobbhavika: leading to renewed existence | leading to rebirth, conducive to repeated becoming, leading to renewed becoming
 bhavataṇhā: craving for existence | craving for becoming, craving to be, craving for continued existence
 vibhavataṇhā: craving for non-existence | craving for non-becoming, craving for annihilation, craving to end existence
-jarāmaraṇa: aging and death | old age and death, ageing and death, old-age-and-death, decay and death
+jarāmaraṇa: ageing and death | aging and death, old age and death, old-age-and-death, decay and death   # Australian spelling (the author, 2026-10-27)
 dukkha: suffering
 domanassa: displeasure
 upāyāsa: despair
@@ -38,7 +39,7 @@ dhamma:    # principle, characteristic or phenomena by context (teaching, doctri
 kamma: action
 khandha: collection | aggregate, heap   # Gombrich, What the Buddha Thought (2009), "Everything is burning"
 upādānakkhandha: collection of fuel | aggregate of clinging, aggregate of grasping, aggregate of attachment   # Gombrich, What the Buddha Thought (2009), "Everything is burning"
-jhāna: meditative absorption
+jhāna: mental disposition | meditative absorption, absorption, contemplative state, meditation, trance   # the author, 2026-10-27: not an absorption
 samādhi: focus | concentration
 paññā: wisdom
 sīla: virtue
@@ -74,7 +75,8 @@ cetasika: mental factor
 saññā: apperception | perception, recognition
 āyatana: sense base
 
-# the eightfold path, as the author's Pali Buddhist Texts chapter renders it
+# the eightfold path, as the author's Pali Buddhist Texts chapter renders it; ariyo aṭṭhaṅgiko maggo in full is "the path of the
+# liberated in eight parts", shortened to "eightfold path" (the author, 2026-10-27): ariya in that phrase is "the liberated"
 sammādiṭṭhi: right view
 sammāsaṅkappa: right resolve | right intention, right thought
 sammāvācā: right speech
@@ -85,10 +87,16 @@ sammāsati: right awareness | right mindfulness
 sammāsamādhi: right focus | right concentration
 rūpa: form | materiality
 # renderings confirmed in the textbook read-through of 2026-10-26
-ariya: noble | pure, holy
-ariyasāvaka: awakened disciple | noble disciple, pure disciple
+ariya: liberated | noble, pure, holy   # the author's ruling of 2026-10-29: ariya is always "liberated"
+ariyasāvaka: disciple of the liberated | awakened disciple, noble disciple, pure disciple
 abhisambuddha: fully awakened | fully realised, fully enlightened, full understanding
 brahmacariya: the pure life | the holy life, the spiritual life, celibacy
 puthujjana: an ordinary person | a common worldling, a worldling
 pahīna: given up | abandoned
 nibbindati: gives up | is disenchanted, becomes dispassionate, is disgusted
+# the author's rulings of 2026-10-27 (textbook bonus chapter)
+samaṇa: wanderer | ascetic, recluse, renunciant, contemplative
+samaṇabrāhmaṇa: religious practitioners | ascetics and brahmins, recluses and brahmins
+uddhaccakukkucca: restlessness and remorse | restlessness and uneasiness, agitation and anxiety, restlessness and worry
+sampajānakārī: acting with clear comprehension | attentive to, fully aware
+vepulla: maturity | expansion, full development
