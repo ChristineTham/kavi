@@ -90,7 +90,9 @@ rūpa: form | materiality
 ariya: liberated | noble, pure, holy   # the author's ruling of 2026-10-29: ariya is always "liberated"
 ariyasāvaka: disciple of the liberated | awakened disciple, noble disciple, pure disciple
 abhisambuddha: fully awakened | fully realised, fully enlightened, full understanding
-brahmacariya: the pure life | the holy life, the spiritual life, celibacy
+brahmacariya: the optimal life | the pure life, the holy life, the spiritual life, celibacy
+dhātu: component | element
+ādesanā: mind reading | telepathy, mind-reading
 puthujjana: an ordinary person | a common worldling, a worldling
 pahīna: given up | abandoned
 nibbindati: gives up | is disenchanted, becomes dispassionate, is disgusted
