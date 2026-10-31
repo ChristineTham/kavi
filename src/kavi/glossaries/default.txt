@@ -102,3 +102,14 @@ samaṇabrāhmaṇa: religious practitioners | ascetics and brahmins, recluses a
 uddhaccakukkucca: restlessness and remorse | restlessness and uneasiness, agitation and anxiety, restlessness and worry
 sampajānakārī: acting with clear comprehension | attentive to, fully aware
 vepulla: maturity | expansion, full development
+# the author's rulings of 2026-11-01 (the tidipa Khandhaka pilot, section 1.5)
+saddhā: confidence | faith, conviction, trust, belief
+anacchariya: natural | wonderful, marvellous, spontaneous, astonishing   # anacchariyā gāthāyo "natural verses"; the DPD's "natural; spontaneous", not the commentarial "more wonderful"
+vihiṃsasaññī: perceiving it as troublesome | with an apperception of trouble, perceiving trouble   # the one phrase where saññā is "perceiving", by the author's ruling
+# verse epithets stay as vocatives with the gloss in parentheses, not translated: Sumedha (The Sage), Samantacakkhu (The All-Seeing One),
+# Vīra (The Brave), Vijitasaṅgāma (Victorious in War), Satthavāha (Caravan Leader), Aṇaṇa (Free of Obligation), `vimala` (Stainless One)
+# the report's other points, accepted by the author the same day (2026-11-01)
+ālaya: attachment | craving, desire, clinging, reliance   # anālaya in the third realisation is "non-attachment"
+idappaccayatā: specific causality | specific conditionality, conditionality, this/that conditionality
+amata: deathless | immortal, immortality, deathless state, nectar, ambrosia
+buddhacakkhu: Buddha-eye | eye of a Buddha, Buddha's eye, eye of complete understanding
