@@ -95,9 +95,13 @@ dhātu: component | element
 ādesanā: mind reading | telepathy, mind-reading
 puthujjana: an ordinary person | a common worldling, a worldling
 pahīna: given up | abandoned
-nibbindati: gives up | is disenchanted, becomes dispassionate, is disgusted
+# nibbidā/nibbindati: "disenchanted" (the author, 2026-11-01); "gives up" was the earlier gloss
+nibbindati: is disenchanted | gives up, becomes dispassionate, is disgusted, becomes disillusioned
+nibbidā: disenchantment | giving up, revulsion, disillusionment, dis-enchantment, disgust
 # the author's rulings of 2026-10-27 (textbook bonus chapter)
-samaṇa: wanderer | ascetic, recluse, renunciant, contemplative
+samaṇa: wanderer | ascetic, recluse, contemplative, mendicant
+# paribbājaka is "renunciant", never "wanderer", which is samaṇa's word (the author, 2026-11-01)
+paribbājaka: renunciant | wanderer, wandering ascetic, mendicant, itinerant ascetic
 samaṇabrāhmaṇa: religious practitioners | ascetics and brahmins, recluses and brahmins
 uddhaccakukkucca: restlessness and remorse | restlessness and uneasiness, agitation and anxiety, restlessness and worry
 sampajānakārī: acting with clear comprehension | attentive to, fully aware
@@ -113,3 +117,13 @@ vihiṃsasaññī: perceiving it as troublesome | with an apperception of troubl
 idappaccayatā: specific causality | specific conditionality, conditionality, this/that conditionality
 amata: deathless | immortal, immortality, deathless state, nectar, ambrosia
 buddhacakkhu: Buddha-eye | eye of a Buddha, Buddha's eye, eye of complete understanding
+# Rulings of 2026-11-01 (the author, on the Khandhaka sections' reports)
+arahatta: liberated state | arahantship, arahatship, state of a liberated one, awakened state, enlightenment, perfection
+dhammacakkhu: Dhamma Eye | insight into the dhamma, eye of Dhamma, Dhamma eye, vision of the Dhamma, eye of truth
+jaṭila: matted hair ascetic | matted-hair ascetic, dreadlocked ascetic, fire-worshipping ascetic, fire ascetic
+# upasampadā: "higher ordination" in the Vinaya; "taking up" where the context is not ordination (the author, 2026-11-01)
+upasampadā: higher ordination | full ordination, acceptance, admission
+# assāsaka: "wish" or "aspiration" (the author, 2026-11-01); the DPD's "consolation" gives way
+assāsaka: aspiration | wish, consolation, comfort, solace
+kisakovadāna: instructor of the kisaka (an ascetic movement) | instructor of the lean, thin instructor, called the Emaciated
+pacchāsamaṇa: attendant monk | attendant wanderer, accompanying monk, junior monk, attendant
