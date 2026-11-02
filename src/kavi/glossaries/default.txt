@@ -17,7 +17,7 @@ upādāna: fuel | clinging, grasping, attachment   # Gombrich, What the Buddha T
 bhava: existence | becoming, being, state of being
 # in the chain of dependent origination (the author, 2026-10-27, textbook chapter 3 and Bonus 19): upādāna is "fuel for existence: the will to live",
 # bhava "existence (of a false perception of an eternal independent \"self\" (atta))", short form "existence (constructed self)", jāti "the birth (of suffering)";
-# this reading of bhava belongs to that chain alone; kāmabhava is "existence in the realm of sensual desire" (AN 3.76), not "desire for becoming"
+# this reading of bhava belongs to that chain alone; kāmabhava is "existence in the realm of sensual desire" (15A3/2.3.6 Paṭhamabhavasutta), not "desire for becoming"
 kāmabhava: existence in the realm of sensual desire | sensual existence, desire for becoming, desire for existence
 jāti: birth
 # in the liberation formula (akuppā me vimutti, ayamantimā jāti, natthi dāni punabbhavo; khīṇā jāti) jāti and punabbhava are

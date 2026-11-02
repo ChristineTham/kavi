@@ -52,7 +52,7 @@ disable), `--sentence-words N`
 
 ## Which models
 
-`docs/bakeoff/` compares the candidates on the opening of DN 15 (the same text translated by hand at
+`docs/bakeoff/` compares the candidates on the opening of the Mahānidānasutta (7D/2; the same text translated by hand at
 https://christham.net/buddhavacana/sutta/deporig/). In short:
 
 | configuration | s/paragraph | character |

@@ -1,6 +1,6 @@
 # Model bake-off
 
-Same passage for every model: the opening of the Mahānidānasutta (DN 15, tipitaka2500 7D/2/2.1, paragraphs 95
+Same passage for every model: the opening of the Mahānidānasutta (tipitaka2500 7D/2/2.1, paragraphs 95
 and the first of 96 — `tests/samples/dn15-short.md`), the text the author has translated at
 https://christham.net/buddhavacana/sutta/deporig/. Each model was run as **translator** (its own draft, then the
 checker) and as **reviewer** (given MITRA-translate's checked draft and the checker's open findings). Machine: M-series
@@ -28,7 +28,7 @@ The analysis ranks the DPD deconstructor's splits together with the Kaccāyana h
 lengthening, not `khā` + `yatī`) and shows one headword per part of speech so a pronoun sense is never hidden.
 
 
-## Whole-text runs on DN 15 (33 segments, 1504 words)
+## Whole-text runs on the Mahānidānasutta, 7D/2 (33 segments, 1504 words)
 
 | run | configuration | time | character |
 | --- | --- | --- | --- |
