@@ -1,0 +1,112 @@
+# Sanskrit glossary: the Pāḷi glossary's renderings carried over to the Sanskrit cognates (the author, 2026-11-03:
+# "replicate the pali glossary as much as possible, names stay in Sanskrit"). Lines are "stem: gloss | other
+# renderings that must give way to the gloss"; a leading # is a comment; an entry without a gloss leaves the
+# rendering to the translator. The equivalents follow Chris Tham's translations at https://christham.net/buddhavacana/.
+pratītyasamutpāda: dependent origination | dependent arising, conditioned arising, dependent co-arising, causal origination
+pratyaya: cause | condition, requisite, basis, support
+avidyā: ignorance | not knowing, unknowing, delusion
+saṃskāra: mental construction | volitional formation, mental fabrication, mental formation, volitional activity, conditioning, formation
+vijñāna: consciousness
+nāmarūpa: phenomenal objects | name and form, mind and body, mentality-materiality, name-and-form
+ṣaḍāyatana: the six sense bases | six sense fields, six sense spheres, sixfold sense base, six senses
+sparśa: contact
+vedanā: feeling | sensation
+tṛṣṇā: craving | thirst, desire
+upādāna: fuel | clinging, grasping, attachment, appropriation
+bhava: existence | becoming, being, state of being
+jāti: birth
+punarbhava: appearing again | rebirth, renewed existence, future life, future existence, re-becoming, being born again
+jarāmaraṇa: ageing and death | aging and death, old age and death, old-age-and-death, decay and death
+duḥkha: suffering
+daurmanasya: displeasure
+upāyāsa: despair
+duḥkhaskandha: mass of suffering
+nirodha: cessation
+samudaya: origin | arising
+nirvāṇa: extinguishment
+dharma:    # principle, characteristic, phenomenon, teaching by context
+karman: action
+skandha: collection | aggregate, heap
+upādānaskandha: collection of fuel | aggregate of clinging, aggregate of grasping, aggregate of attachment
+dhyāna: mental disposition | meditative absorption, absorption, contemplative state, meditation, trance
+samādhi: focus | concentration
+prajñā: wisdom
+śīla: virtue | morality
+smṛti: awareness | mindfulness
+āsrava: defilement | influx, taint, canker
+kleśa: defilement | affliction
+nīvaraṇa: hindrance
+bodhyaṅga: factor of awakening
+bodhi: awakening | enlightenment
+saṃbodhi: full awakening | enlightenment, supreme enlightenment, complete awakening
+samyaksaṃbodhi: perfect awakening | perfect understanding, perfect enlightenment, supreme perfect enlightenment, full enlightenment
+abhijñā: experiential understanding | direct knowledge, higher knowledge, special knowledge, supernormal knowledge, superknowledge
+indriya: faculty
+mārga: path
+satya: truth
+āryasatya: realisation | noble truth, pure truth
+anitya: impermanent
+ātman: self | soul, spirit, essence, ego
+anātman: not-self | non-self, no-self, impersonal, without self, selfless
+saṃsāra: cycle of rebirth
+maitrī: goodwill | friendliness, benevolence, loving-kindness
+karuṇā: compassion | sympathy, kindness, pity
+muditā: happiness for others | appreciation, sympathetic joy, gladness
+upekṣā: equanimity | mental balance, mental poise, non-reactivity
+srotāpanna: stream-enterer | stream-winner
+arhat: liberated one | perfected one, awakened being, worthy one, saint
+tathāgata: thus-gone one | thus-come one
+citta: mind
+caitta: mental factor
+saṃjñā: apperception | perception, recognition, notion, idea
+āyatana: sense base
+samyagdṛṣṭi: right view
+samyaksaṃkalpa: right resolve | right intention, right thought
+samyagvāc: right speech
+samyakkarmānta: right action | right conduct
+samyagājīva: right livelihood | right way of living
+samyagvyāyāma: right effort
+samyaksmṛti: right awareness | right mindfulness
+samyaksamādhi: right focus | right concentration
+rūpa: form | materiality
+ārya: liberated | noble, pure, holy
+āryaśrāvaka: disciple of the liberated | awakened disciple, noble disciple, pure disciple
+abhisaṃbuddha: fully awakened | fully realised, fully enlightened
+brahmacarya: the optimal life | the pure life, the holy life, the spiritual life, celibacy
+dhātu: component | element
+pṛthagjana: an ordinary person | a common worldling, a worldling
+prahīṇa: given up | abandoned
+nirveda: disenchantment | giving up, revulsion, disillusionment, disgust
+śramaṇa: wanderer | ascetic, recluse, contemplative, mendicant
+parivrājaka: renunciant | wanderer, wandering ascetic, mendicant, itinerant ascetic
+śramaṇabrāhmaṇa: religious practitioners | ascetics and brahmins, recluses and brahmins
+śraddhā: confidence | faith, conviction, trust, belief
+amṛta: deathless | immortal, immortality, deathless state, nectar, ambrosia
+arhattva: liberated state | arhatship, state of a liberated one, awakened state, enlightenment, perfection
+dharmacakṣus: Dhamma Eye | eye of Dharma, Dharma eye, vision of the Dharma, eye of truth
+upasaṃpadā: higher ordination | full ordination, acceptance, admission
+# the Prajñāpāramitā vocabulary, as the author's Heart and Diamond Sūtra pages have it
+śūnyatā: emptiness | voidness, void
+śūnya: empty
+bodhisattva: bodhisattva
+mahāsattva: mahāsattva | great being
+sattva: being | living being, creature
+pudgala: person | individual
+jīva: life-force | soul, living being
+lakṣaṇa: characteristic | mark, sign
+lakṣaṇasaṃpad: physical characteristics | possession of marks
+nimitta: sign | mark, object
+puṇya: merit
+puṇyaskandha: mass of merit | heap of merit
+dharmaparyāya: method of teaching | discourse on the Dharma, dharma discourse
+lokadhātu: world system | world
+kṣetra: field
+vastu: object | thing, basis
+mantra: incantation | spell
+vidyā: knowledge
+pāramitā: perfection
+prajñāpāramitā: perfection of wisdom
+rūpakāya: form-body
+piṇḍagrāha: grasp of substance | seizing a mass
+ātmadṛṣṭi: view of self
+sma: (past)

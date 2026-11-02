@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .dpd import Analysis, analysis_table, reference_pairs, special_words
+from .language import LANGUAGE
 
 # --------------------------------------------------------------------------------------
 # MLX wrapper
@@ -134,7 +135,7 @@ MARKDOWN_NOTE = " Keep the Markdown formatting of the text (asterisks for bold a
 def conventions(specials: dict[str, list[tuple[str, str]]], extra_terms: list[str] | None = None) -> str:
     """The naming and terminology rules, with the words of this text that they apply to."""
     parts = [
-        "Leave personal names, place names, titles of texts and honorifics untranslated, in their Pāli stem form"
+        "Leave personal names, place names, titles of texts and honorifics untranslated, in their " + LANGUAGE["name"] + " stem form"
         " with IAST diacritics.",
     ]
     names = specials.get("name", []) + specials.get("honorific", [])
@@ -145,7 +146,7 @@ def conventions(specials: dict[str, list[tuple[str, str]]], extra_terms: list[st
     glosses = sorted({g for _, g in terms} | set(extra_terms or []))
     if glosses:
         parts.append(
-            "Where a word is used as a technical term, keep it in Pāli in backticks with a short English gloss in "
+            "Where a word is used as a technical term, keep it in " + LANGUAGE["name"] + " in backticks with a short English gloss in "
             "parentheses on its first occurrence, like `khandha` (aggregate); where it is used in its ordinary sense, "
             "translate it plainly. Candidates in this text: " + ", ".join(glosses) + "."
         )
@@ -185,9 +186,9 @@ def translate_prompt(source: str, analyses: list[Analysis], has_placeholders: bo
 
 
 GENERIC_SYSTEM = (
-    "You translate Pāli into English literally and faithfully, word by word as far as English allows. You render "
+    "You translate the source language (Pāli or Sanskrit) into English literally and faithfully, word by word as far as English allows. You render "
     "every word in the grammatical form the dictionary analysis gives (case, number, tense, person, voice), keep the "
-    "Pāli word order where English allows, and add nothing that is not in the Pāli: no explanation, no commentary, "
+    "source word order where English allows, and add nothing that is not in the source: no explanation, no commentary, "
     "no interpretation, and no assumption that the text is religious unless its words say so. You answer with the "
     "translation only."
 )
@@ -217,8 +218,8 @@ def translate_messages_generic(source: str, analyses: list[Analysis], has_placeh
         rules.append("Render the words and formulas this text shares with the preceding segments exactly as they were rendered there.")
     user = (
         ("Preceding segments of the same text and their translations:\n" + "\n".join(f"- {s}\n  → {t}" for s, t in context) + "\n\n" if context else "") +
-        "Translate this Pāli into English.\n\nPāli:\n" + source +
-        "\n\nDictionary analysis of every word (Digital Pāli Dictionary: headword, part of speech, grammatical form, meanings):\n"
+        "Translate this " + LANGUAGE["name"] + " into English.\n\n" + LANGUAGE["name"] + ":\n" + source +
+        "\n\nDictionary analysis of every word (headword, part of speech, grammatical form, meanings):\n"
         + analysis_table(analyses) + "\n\nRules:\n" + "\n".join(f"{i}. {r}" for i, r in enumerate(rules, 1))
         + "\n\nAnswer with the translation only."
     )
@@ -226,8 +227,8 @@ def translate_messages_generic(source: str, analyses: list[Analysis], has_placeh
 
 
 REVIEW_SYSTEM = (
-    "You are a meticulous reviewer of Pāli-to-English translations. You check a draft translation word by word "
-    "against the Pāli and against a dictionary analysis of every word (the Digital Pāli Dictionary's part of "
+    "You are a meticulous reviewer of translations from Pāli and Sanskrit into English. You check a draft translation word by word "
+    "against the source and against a dictionary analysis of every word (part of "
     "speech, grammatical form and meanings), and you correct only what is wrong."
 )
 

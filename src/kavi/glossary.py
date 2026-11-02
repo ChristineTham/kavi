@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import re
 
+from .language import LANGUAGE
+
 # Words that are honorifics or forms of address, however they are inflected.
 HONORIFICS = {
     "bhante", "bhadante", "āvuso", "ayya", "ayyo", "ayye", "ayyā", "bhagavā", "bhagavant", "bhagavantu",
@@ -68,7 +70,9 @@ TECH_SETS = re.compile(
 
 # Honorifics written with a capital (the user's style: "the Bhagavā's words", but "the bhikkhū", "bhikkhave").
 CAPITALISED_HONORIFICS = {"bhagavā", "bhagavant", "bhagavantu", "satthā", "satthar", "tathāgata", "sugata", "sammāsambuddha",
-                          "buddha", "jina", "bhante", "bhadante"}
+                          "buddha", "jina", "bhante", "bhadante",
+                          # Sanskrit (the author's Diamond Sūtra: "the Bhagavān", "the Tathāgata", "Subhūti", but "āyuṣmān")
+                          "bhagavat", "bhagavān", "śāstṛ", "samyaksaṃbuddha", "samyaksambuddha", "bhadanta"}
 
 
 def honorific_form(stem: str, surface: str, parses: list[str], family_set: str = "") -> str:
@@ -77,8 +81,12 @@ def honorific_form(stem: str, surface: str, parses: list[str], family_set: str =
     form = surface
     if stem.startswith("bhagavant") or stem == "bhagavā":
         form = "bhagavā"
-    elif parses and not any(("nom" in p or "voc" in p) for p in parses):
-        form = stem
+    elif stem in ("bhagavat", "bhagavān"):
+        form = "bhagavān"                                       # Sanskrit: the nominative is the citation form
+    elif stem in ("āyuṣmat", "āyuṣmān"):
+        form = "āyuṣmān"                                        # "the āyuṣmān Subhūti", as the author writes it
+    elif LANGUAGE["code"] == "sa" or (parses and not any(("nom" in p or "voc" in p) for p in parses)):
+        form = stem                                             # Sanskrit honorifics always in stem form (the author's style)
     if stem in CAPITALISED_HONORIFICS or "epithets of the Buddha" in family_set:
         form = form[:1].upper() + form[1:]
     return form
@@ -87,8 +95,8 @@ def honorific_form(stem: str, surface: str, parses: list[str], family_set: str =
 def term_form(stem: str, surface: str, parses: list[str]) -> str:
     """A technical term is shown as it stands in the text when nominative or vocative (`viññāṇaṃ`), otherwise
     in its stem form (`dhamma` for dhammassa) — the user's practice."""
-    if parses and not any(("nom" in p or "voc" in p) for p in parses):
-        return stem
+    if LANGUAGE["code"] == "sa" or (parses and not any(("nom" in p or "voc" in p) for p in parses)):
+        return stem                                             # Sanskrit terms in stem form: `rūpa`, `śūnyatā` (the author's style)
     return surface
 
 

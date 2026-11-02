@@ -29,6 +29,7 @@ from .config import Settings
 from .dpd import DPD, Analysis, Headword, VERB_POS, lemma_clean, normalise, parse_words
 from .glossary import honorific_form
 from .grammar import to_symbol
+from .language import LANGUAGE, PRONOUNS, SABBANAMA, set_language
 from .lint import lint
 from .segment import Block, parse_markdown, split_sentences
 
@@ -38,27 +39,26 @@ NIGGAHITA = str.maketrans({"ṃ": "ṁ"})
 
 
 def modern(text: str) -> str:
-    """The niggahīta written ṁ, the modern spelling the textbook uses (the DPD keeps ṃ)."""
-    return text.translate(NIGGAHITA)
+    """The niggahīta written ṁ, the modern spelling the textbook uses (the DPD keeps ṃ); Sanskrit keeps ṃ."""
+    return text.translate(NIGGAHITA) if LANGUAGE["niggahita"] else text
 
 
-# Kaccāyana's sabbanāma (Appendix L of the textbook), which take the pronoun mark whatever the DPD calls them.
-SABBANAMA = {"sabba", "katara", "katama", "ubhaya", "itara", "añña", "aññatara", "aññatama", "pubba", "para", "apara",
-             "dakkhiṇa", "uttara", "adhara", "ya", "ta", "eta", "ima", "amu", "kiṃ", "eka", "tumha", "amha", "ahaṃ", "tvaṃ"}
 VOICE_SYMBOL = {"act": "🟢", "reflx": "🔵", "pass": "🔴", "caus": "🟠"}
+TADDHITA = {"tva", "tā", "ka", "ika", "in", "vat", "mat", "maya", "tara", "tama", "ya"}
 GENDERS = ("masc", "fem", "nt", "x")
 CASES = ("nom", "acc", "instr", "dat", "abl", "gen", "loc", "voc")
 NUMBERS = ("sg", "pl", "dual")
-TENSES = ("pr", "aor", "fut", "imp", "opt", "cond", "imperf", "perf")
+TENSES = ("pr", "aor", "fut", "imp", "opt", "cond", "imperf", "perf", "pfut", "bened")
 PERSONS = ("1st", "2nd", "3rd")
 NOMINAL_RE = re.compile(r"(?:(masc(?: fem)?(?: & nt)?|masc fem & nt|fem(?: & nt)?|nt|x)\s+)?(nom|acc|instr|dat|abl|gen|loc|voc)\s+(sg|pl|dual)\b")
-VERB_RE = re.compile(r"(?:(reflx)\s+)?(pr|aor|fut|imp|opt|cond|imperf|perf)\s+(1st|2nd|3rd)\s+(sg|pl)\b")
-PERSON_RE = re.compile(r"\b(1st|2nd|3rd)\s+(nom|acc|instr|dat|abl|gen|loc|voc)\s+(sg|pl)\b")
-OF_RE = re.compile(r"\bof (\S+?)(?:,|$)")
+VERB_RE = re.compile(r"(?:(reflx)\s+)?(pr|aor|fut|imp|opt|cond|imperf|perf|pfut|bened)\s+(1st|2nd|3rd)\s+(sg|pl|dual)\b")
+PERSON_RE = re.compile(r"\b(1st|2nd|3rd)\s+(nom|acc|instr|dat|abl|gen|loc|voc)\s+(sg|pl|dual)\b")
+OF_RE = re.compile(r"\bof (\S+?)(?:[,;]|$)")                        # "abs of upasaṃkrāmati; BHS § 2.64 …": the lemma stops at the note
 ENDINGS = {"a", "ā", "aṃ", "o", "e", "i", "ī", "u", "ū", "ena", "assa", "smiṃ", "mhi", "mhā", "smā", "āya", "āyaṃ", "ehi", "ānaṃ", "esu", "āni", "ehi"}
 PUNCT_KEEP = ",;:"
-WORD_CHARS = "A-Za-zĀāĪīŪūṂṃṀṁṄṅÑñṬṭḌḍṆṇḶḷ’'"
+WORD_CHARS = "A-Za-zĀāĪīŪūṂṃṀṁṄṅÑñṬṭḌḍṆṇḶḷṚṛṜṝḸḹŚśṢṣḤḥ’‘'"
 TOKEN_RE = re.compile(rf"[{WORD_CHARS}]+|[{PUNCT_KEEP}]")
+TOKEN_RE_SA = re.compile(rf"[{WORD_CHARS}]+(?:-[{WORD_CHARS}]+)+|[{WORD_CHARS}]+|[{PUNCT_KEEP}]")   # vedanā-saṃjñā-…: one compound
 ENGLISH_STOP = {"the", "of", "and", "to", "in", "is", "a", "that", "this", "it", "for", "with", "as", "on", "by", "are", "be"}
 
 
@@ -90,10 +90,14 @@ class Parse:
         if self.kind == "unknown":
             return f"?({self.lemma})"
         if self.kind == "ind":
+            if LANGUAGE["code"] == "sa" and self.members:              # tadyathā: ⏏️🆎(tad+yathā), the author's form
+                return "⏏️🆎(" + "+".join(self.members) + ")"
             return f"⏏️({self.lemma})"
         if self.kind == "prefix":
             return f"🔼({self.lemma})"
         if self.kind == "affix":
+            if LANGUAGE["code"] == "sa" and self.members:              # triḥpradakṣiṇīkṛtvā: 🔽(tvā)🆎(tri+pradakṣiṇa+karoti)
+                return f"🔽({self.affix})🆎(" + "+".join(self.members) + ")"
             return f"🔽({self.affix})({self.lemma})"
         if self.kind == "verb":
             return (VOICE_SYMBOL.get(self.voice or "act", "🟢") + s.get(self.number, "") + s.get(self.person, "")
@@ -163,7 +167,8 @@ def compound_members(h: Headword) -> list[str]:
     # the morphological construction first: "avijjā + paccaya + ā", "anuloma + paṭiloma + aṃ" — lemma members, then the ending
     for alt in (h.construction or "").split("|"):
         parts = [p.strip() for p in alt.split(" + ")]
-        while len(parts) > 2 and (len(parts[-1]) <= 2 or parts[-1] in ENDINGS):
+        while len(parts) > 2 and (len(parts[-1]) <= 2 or parts[-1] in ENDINGS or parts[-1] in TADDHITA
+                                  or (h.pos in ("pp", "prp", "ptp") and parts[-1] in ("ta", "māna", "anta", "at", "tavya", "anīya", "ya", "tavat"))):
             parts.pop()
         if len(parts) >= 2 and all(re.fullmatch(r"[a-zāīūṃṅñṭḍṇḷ]+", p) for p in parts):
             return [modern(p) for p in parts]
@@ -180,14 +185,18 @@ def _affix(h: Headword, surface: str) -> str:
     if h.pos == "abs":
         return "ya" if surface.endswith("ya") and not surface.endswith("tvā") else ("tvāna" if surface.endswith("tvāna") else "tvā")
     if h.pos == "inf":
-        return "tuṁ"
+        return "tum" if LANGUAGE["code"] == "sa" else "tuṁ"
     if h.pos in ("pp", "prp", "ptp"):
-        parts = [re.sub(r"[^a-zāīūṃṅñṭḍṇḷ]", "", x) for x in (h.construction or "").split("|")[0].split("+")]
+        parts = [re.sub(r"[^a-zāīūṃṅñṭḍṇḷṛśṣ]", "", x) for x in (h.construction or "").split("|")[0].split("+")]
         if h.pos == "prp":
-            return "māna" if "māna" in parts else "anta"
+            return "māna" if "māna" in parts else ("at" if "at" in parts else "anta")
         if h.pos == "ptp":
-            return next((modern(x) for x in reversed(parts) if x in ("tabba", "anīya", "ṇīya", "ya", "teyya")), "tabba")
-        return next((modern(x) for x in reversed(parts) if x in ("ta", "ita", "na", "ina", "ṇa", "tta")), "ta")
+            return next((modern(x) for x in reversed(parts) if x in ("tabba", "anīya", "ṇīya", "ya", "teyya", "tavya")), "tavya" if LANGUAGE["code"] == "sa" else "tabba")
+        return next((modern(x) for x in reversed(parts) if x in ("ta", "ita", "na", "ina", "ṇa", "tta", "tavat")), "ta")
+    if h.pos in ("masc", "fem", "nt", "adj") and h.construction and " + " in h.construction:
+        last = h.construction.split("|")[0].split(" + ")[-1].strip()
+        if last in TADDHITA:
+            return last
     return ""
 
 
@@ -226,7 +235,7 @@ def candidates(h: Headword, surface: str) -> list[Parse]:
                 out.append(Parse("verb", lemma, number=m.group(4), person=m.group(3), tense=m.group(2),
                                  voice="reflx" if m.group(1) else voice, **common))
         return _dedupe(out)
-    pron = h.pos == "pron" or h.stem in SABBANAMA or lemma in SABBANAMA
+    pron = h.pos == "pron" or h.stem in PRONOUNS or lemma in PRONOUNS
     affix = _affix(h, surface)
     sources = h.parses or [g]
     for p in sources:
@@ -243,9 +252,9 @@ def candidates(h: Headword, surface: str) -> list[Parse]:
         for gender in genders:
             if pron:
                 person = "3rd"
-                if lemma in ("ahaṁ", "amha"):
+                if lemma in ("ahaṁ", "amha", "aham", "asmad"):
                     person = "1st"
-                elif lemma in ("tvaṁ", "tumha"):
+                elif lemma in ("tvaṁ", "tumha", "tvam", "yuṣmad"):
                     person = "2nd"
                 out.append(Parse("pron", lemma, gender=gender, case=m.group(2), number=m.group(3), person=person, **common))
             else:
@@ -292,16 +301,19 @@ class Token:
 def tokenise(text: str) -> list[tuple[str, str, bool]]:
     """(surface, lookup key, is_punct) for the words and kept punctuation of a sentence. Quotation marks are
     dropped; a word ending in ``n`` before the closing ``ti`` of a quotation gets its niggahīta back."""
-    raw = [(m.group(0), m.start()) for m in TOKEN_RE.finditer(text)]
+    rx = TOKEN_RE_SA if LANGUAGE["code"] == "sa" else TOKEN_RE
+    raw = [(m.group(0), m.start()) for m in rx.finditer(text)]
     out: list[tuple[str, str, bool]] = []
     for i, (tok, pos) in enumerate(raw):
         if tok in PUNCT_KEEP:
             if out and not out[-1][2] and i + 1 < len(raw) and raw[i + 1][0] not in PUNCT_KEEP:
                 out.append((tok, tok, True))
             continue
-        word = tok.strip("’'")
-        if not word or not re.search(r"[a-zāīūṃṅñṭḍṇḷ]", word.lower()):
+        word = tok.strip("’‘'")
+        if not word or not re.search(r"[a-zāīūṃṅñṭḍṇḷṛśṣḥ]", word.lower()):
             continue
+        if LANGUAGE["code"] == "sa" and tok.startswith(("’", "‘", "'")) and not word.startswith("a"):
+            word = "a" + word                                 # ’bhūt: the avagraha marks an elided a
         key = normalise(word)
         nxt = raw[i + 1][0] if i + 1 < len(raw) else ""
         between = text[pos + len(tok): raw[i + 1][1]] if i + 1 < len(raw) else ""
@@ -405,11 +417,15 @@ def _candidates_of(a: Analysis, surface: str, max_headwords: int = 6) -> list[Pa
 # The model's choice
 # --------------------------------------------------------------------------------------
 
-SYSTEM = (
-    "You are a Pāli grammarian and a literal translator. For every word of a Pāli sentence you choose the one "
-    "dictionary parse (Digital Pāḷi Dictionary) that the sentence requires, you gloss the word in that form, and you "
+SYSTEM_TEMPLATE = (
+    "You are a {lang} grammarian and a literal translator. For every word of a {lang} sentence you choose the one "
+    "dictionary parse that the sentence requires, you gloss the word in that form, and you "
     "translate the sentence literally into normal English. You answer with JSON only."
 )
+
+
+def system_prompt() -> str:
+    return SYSTEM_TEMPLATE.format(lang=LANGUAGE["name"])
 
 
 def prompt_for(unit_text: str, tokens: list[Token], glossary: dict[str, str], context: list[tuple[str, str]]) -> str:
@@ -431,8 +447,8 @@ def prompt_for(unit_text: str, tokens: list[Token], glossary: dict[str, str], co
     rules = [
         "For every word choose the candidate whose grammatical form the sentence requires: an adjective or participle agrees with its noun in gender, number and case; the verb's person and number are its subject's; a locative absolute takes the locative participle.",
         "The gloss renders only that word in that form, in one to four English words, with the preposition the case needs where English needs one (\"by me\", \"in the night\", \"of the week\"), and no explanation.",
-        "Names stay in their Pāli stem form; honorifics and titles stay as they stand in the text (Bhagavā, bhikkhave, bhante).",
-        "The translation renders every word of the sentence, keeps a present-tense verb in the present, is rearranged into a normal English sentence, and adds nothing that the Pāli does not say.",
+        f"Names stay in their {LANGUAGE['name']} stem form; honorifics and titles stay as they stand in the text " + ("(Bhagavān, bhikṣavaḥ, āyuṣman)." if LANGUAGE["code"] == "sa" else "(Bhagavā, bhikkhave, bhante)."),
+        f"The translation renders every word of the sentence, keeps a present-tense verb in the present, is rearranged into a normal English sentence, and adds nothing that the {LANGUAGE['name']} does not say.",
     ]
     if used:
         rules.append("These technical terms take these glosses: " + "; ".join(used) + ".")
@@ -587,7 +603,8 @@ def _conventional(gloss: str, form: str) -> str:
     return (m.group(0) if m else "") + form
 
 
-def is_pali(dpd: DPD, text: str) -> bool:
+def is_pali(dpd, text: str) -> bool:
+    """Is this block in the source language (Pāli or Sanskrit, by the lexicon given)?"""
     words = [w for w, _, p in tokenise(text) if not p]
     if not words:
         return False
@@ -601,6 +618,7 @@ class Interlinear:
                  use_cache: bool = True):
         self.s = settings
         self.dpd = dpd
+        set_language(dpd)
         self.models = models
         self.role = model_role
         self.progress = progress or (lambda msg: sys.stderr.write(msg + "\n"))
@@ -616,9 +634,12 @@ class Interlinear:
 
     # -- cache --------------------------------------------------------------------------
 
-    def _key(self, text: str) -> str:
+    def _key(self, text: str, tokens: list[Token] | None = None) -> str:
+        """The cache key: the sentence, the model, the glossary and the candidate parses the model chose from, so
+        that a change in the lexicon re-asks only the sentences whose candidates it changed."""
         model = self.s.eval_model if self.role == "review" else self.s.translate_model
-        raw = "\x00".join([modern(text).strip(), Path(model).name, "|".join(self.s.glossary_terms), "interlinear-2"])
+        cands = "|".join(f"{t.key}:" + ",".join(p.symbols() for p in t.candidates) for t in tokens or [] if not t.punct)
+        raw = "\x00".join([modern(text).strip(), Path(model).name, "|".join(self.s.glossary_terms), "interlinear-3", cands])
         return hashlib.sha256(raw.encode()).hexdigest()
 
     def save_cache(self) -> None:
@@ -676,14 +697,14 @@ class Interlinear:
 
     def process(self, unit: Unit, context: list[tuple[str, str]]) -> None:
         unit.tokens = analyse_tokens(self.dpd, unit.text)
-        key = self._key(unit.text)
+        key = self._key(unit.text, unit.tokens)
         if key in self.cache:
             c = self.cache[key]
             unit.from_cache = True
             self._apply(unit, {int(k): v for k, v in c.get("choice", {}).items()}, {int(k): v for k, v in c.get("gloss", {}).items()}, c.get("translation", ""))
             return
         model = self.models.get(self.role)
-        messages = [{"role": "system", "content": SYSTEM},
+        messages = [{"role": "system", "content": system_prompt()},
                     {"role": "user", "content": prompt_for(modern(unit.text), unit.tokens, self.s.glossary_map, context)}]
         choice: dict[int, int] = {}
         gloss: dict[int, str] = {}
@@ -711,10 +732,9 @@ class Interlinear:
             if m:
                 pieces, seg_pos = m
         if not pieces:
-            if verse:
-                pieces = [(f"{para_no}.{i}", ln.strip()) for i, ln in enumerate(lines, 1)]
-            else:
-                pieces = [(f"{para_no}.{i}", s) for i, s in enumerate(split_sentences(" ".join(lines)), 1)]
+            parts = [ln.strip() for ln in lines] if verse else split_sentences(" ".join(lines))
+            parts = [x for x in parts if re.search(r"[^\W\d_]", x)]      # "| ||": a piece of punctuation alone is no unit
+            pieces = [(f"{para_no}.{i}", x) for i, x in enumerate(parts, 1)]
         return [Unit(num, txt, verse=verse) for num, txt in pieces], seg_pos, verse
 
     def render_group(self, u: Unit, with_translation: bool = True) -> list[str]:

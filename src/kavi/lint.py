@@ -109,10 +109,17 @@ def lint(analyses: list[Analysis], translation: str, glossary: dict[str, str] | 
     glossary = glossary or {}
     alternatives = alternatives or {}
     glossed: set[str] = set()
-    # glossary terms inside compounds (nāmarūpanirodho) also fix the rendering of the term wherever it appears
-    source_keys = " ".join(a.key for a in analyses)
+    # glossary terms inside compounds (nāmarūpanirodho) also fix the rendering of the term wherever it appears: the
+    # term must be a word or a compound member of the sentence, not a substring of one (bhava is not in bhavet, whose
+    # alternative "being" would otherwise turn every "being" of the sentence into "existence")
+    present: set[str] = set()
+    for a in analyses:
+        for h in a.headwords[:1]:
+            present.add(h.stem)
+            present.update(m for m in (h.compound_construction or "").split(" + ") if m)
+            present.update(m.strip() for m in (h.construction or "").split(" + ") if m.strip())
     for stem, gloss in glossary.items():
-        if gloss and stem[:-1] in source_keys:
+        if gloss and stem in present:
             others = [v for v in alternatives.get(stem, []) if v.lower() != gloss.lower() and v.lower() not in gloss.lower()]
             hit = _replace_english(text, _plural_variants(others), gloss, apply, every=True, keep_article=True, plural_aware=True)
             if hit:

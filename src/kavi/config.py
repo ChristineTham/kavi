@@ -40,7 +40,15 @@ class Settings:
     context_segments: int = 2      # preceding segments shown to the translate model, for consistent formulas
     temperature: float = 0.0
     cache_dir: Path = HOME / ".cache" / "kavi"
+    lang: str = "pi"               # "pi" Pāli (the Digital Pāḷi Dictionary) or "sa" Sanskrit (vidyut and the Cologne dictionaries)
     glossary: Path | None = Path(__file__).with_name("glossaries") / "default.txt"   # "term: gloss" lines; None disables
+
+    def use_language(self, lang: str) -> None:
+        """Switch the language; the default glossary follows it unless one was given."""
+        default = Path(__file__).with_name("glossaries")
+        if self.glossary in (default / "default.txt", default / "sanskrit.txt", None) and self.glossary is not None:
+            self.glossary = default / ("sanskrit.txt" if lang == "sa" else "default.txt")
+        self.lang = lang
 
     def _glossary_lines(self) -> list[tuple[str, str, list[str]]]:
         """(stem, gloss, alternatives) per glossary line "stem: gloss | alt1, alt2"."""
@@ -74,6 +82,14 @@ class Settings:
         return [f"{t} ({g})" for t, g in self.glossary_map.items() if g]
 
     @property
+    def sanskrit_db(self) -> Path:
+        return self.data_dir / "sanskrit.sqlite"
+
+    @property
+    def vidyut_dir(self) -> Path:
+        return self.data_dir / "vidyut"
+
+    @property
     def dpd_db(self) -> Path:
         return Path(os.environ.get("KAVI_DPD_DB", self.data_dir / "dpd.db")).expanduser()
 
@@ -88,11 +104,16 @@ class Settings:
     def check(self) -> list[str]:
         """Human-readable list of what is missing."""
         problems = []
-        if not self.dpd_db.exists():
+        if self.lang == "sa":
+            if not (self.vidyut_dir / "kosha").exists():
+                problems.append(f"vidyut data not found at {self.vidyut_dir} — run `kavi setup --sanskrit`")
+            if not self.sanskrit_db.exists():
+                problems.append(f"sanskrit.sqlite not found at {self.sanskrit_db} — run `kavi setup --sanskrit`")
+        elif not self.dpd_db.exists():
             problems.append(f"dpd.db not found at {self.dpd_db} — download the DPD SQLite release "
                             "(https://github.com/digitalpalidictionary/dpd-db/releases) into the data folder "
                             "or set KAVI_DPD_DB")
-        if not self.decon_db.exists() and not self.decon_json.exists():
+        if self.lang != "sa" and not self.decon_db.exists() and not self.decon_json.exists():
             problems.append(f"deconstructor_output.json not found in {self.data_dir} (optional: sandhi splitting "
                             "then relies on the lookup table and Kaccāyana heuristics alone)")
         for label, path in (("translate model", self.translate_model), ("review model", self.eval_model)):

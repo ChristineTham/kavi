@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import Settings
+from .language import set_language
 from .dpd import DPD, Analysis, analyse_text, analysis_table
 from .lint import Finding, lint
 from .models import (ModelPool, is_degenerate, is_meta, is_mitra_translate, parse_review, review_prompt,
@@ -126,6 +127,7 @@ class Translator:
                  use_cache: bool = True):
         self.s = settings
         self.dpd = dpd
+        set_language(dpd)
         self.models = models
         self.progress = progress or (lambda msg: sys.stderr.write(msg + "\n"))
         self.calls = 0

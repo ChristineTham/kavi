@@ -42,12 +42,18 @@ def _settings(args) -> Settings:
         s.sentence_words = args.sentence_words
     if getattr(args, "batch_words", None):
         s.eval_batch_words = args.batch_words
+    if getattr(args, "lang", None):
+        s.use_language(args.lang)
     if getattr(args, "glossary", None):
         s.glossary = None if args.glossary.lower() == "none" else Path(args.glossary).expanduser()
     return s
 
 
 def _dpd(s: Settings):
+    """The lexicon of the language: the DPD for Pāli, vidyut and the Cologne dictionaries for Sanskrit."""
+    if s.lang == "sa":
+        from .sanskrit import SanskritLexicon
+        return SanskritLexicon(s.data_dir)
     from .dpd import DPD
     return DPD(s.dpd_db, s.decon_db, s.decon_json)
 
@@ -162,9 +168,42 @@ def _analysis_json(a) -> dict:
     }
 
 
+def cmd_setup_sanskrit(args) -> int:
+    """Download vidyut's linguistic data (81 MB, MIT) and the Cologne digitisations of Edgerton's Buddhist Hybrid
+    Sanskrit Dictionary, Monier-Williams and Apte (CC BY-NC-SA 3.0), and build data/sanskrit.sqlite."""
+    import urllib.request
+    from . import cologne
+    s = _settings(args)
+    data = s.data_dir
+    data.mkdir(parents=True, exist_ok=True)
+    vdir = s.vidyut_dir
+    if (vdir / "kosha").exists() and not args.force:
+        print(f"vidyut data present at {vdir}")
+    else:
+        import vidyut
+        print(f"downloading vidyut's data to {vdir} …")
+        vidyut.download_data(str(vdir))
+    cdir = data / "cologne"
+    cdir.mkdir(exist_ok=True)
+    for d in cologne.SOURCES:
+        dest = cdir / f"{d}.txt"
+        if dest.exists() and not args.force:
+            print(f"{dest.name} present")
+            continue
+        url = cologne.RAW.format(d=d)
+        print(f"downloading {url} …")
+        urllib.request.urlretrieve(url, dest)
+    print("building sanskrit.sqlite …")
+    out = cologne.build(data, progress=print)
+    print(f"done: {out}")
+    return 0
+
+
 def cmd_setup(args) -> int:
     """Download both MITRA checkpoints and convert them to MLX (the checkpoints declare model_type
     qwen3_5_text, which mlx-lm does not know; it is patched to qwen3_5)."""
+    if getattr(args, "sanskrit", False):
+        return cmd_setup_sanskrit(args)
     from huggingface_hub import snapshot_download
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -205,16 +244,22 @@ def cmd_doctor(args) -> int:
     s = _settings(args)
     print(f"kavi {__version__}")
     print(f"data dir        : {s.data_dir}")
-    print(f"dpd.db          : {s.dpd_db} {'OK' if s.dpd_db.exists() else 'MISSING'}")
-    print(f"deconstructor   : {s.decon_db if s.decon_db.exists() else s.decon_json} "
-          f"{'OK' if s.decon_db.exists() or s.decon_json.exists() else 'MISSING (optional)'}")
+    print(f"language        : {'Sanskrit (vidyut + Cologne dictionaries)' if s.lang == 'sa' else 'Pāli (DPD)'}")
+    if s.lang == "sa":
+        print(f"vidyut data     : {s.vidyut_dir} {'OK' if (s.vidyut_dir / 'kosha').exists() else 'MISSING (kavi setup --sanskrit)'}")
+        print(f"sanskrit.sqlite : {s.sanskrit_db} {'OK' if s.sanskrit_db.exists() else 'MISSING (kavi setup --sanskrit)'}")
+    else:
+        print(f"dpd.db          : {s.dpd_db} {'OK' if s.dpd_db.exists() else 'MISSING'}")
+        print(f"deconstructor   : {s.decon_db if s.decon_db.exists() else s.decon_json} "
+              f"{'OK' if s.decon_db.exists() or s.decon_json.exists() else 'MISSING (optional)'}")
     for label, path in (("translate model", s.translate_model), ("review model", s.eval_model)):
         print(f"{label:16}: {path} {'OK' if Path(path).expanduser().exists() else 'MISSING (kavi setup)'}")
-    if s.dpd_db.exists():
+    sample = "bodhisattvaḥ" if s.lang == "sa" else "bhikkhave"
+    if (s.lang == "sa" and (s.vidyut_dir / "kosha").exists()) or (s.lang != "sa" and s.dpd_db.exists()):
         dpd = _dpd(s)
-        print(f"DPD release     : {dpd.version}")
-        a = dpd.analyse("bhikkhave")
-        print(f"sample lookup   : bhikkhave -> {a.headwords[0].lemma if a.headwords else '?'}: {a.headwords[0].analysis if a.headwords else ''}")
+        print(f"lexicon         : {dpd.version}")
+        a = dpd.analyse(sample)
+        print(f"sample lookup   : {sample} -> {a.headwords[0].lemma if a.headwords else '?'}: {a.headwords[0].analysis if a.headwords else ''}")
     problems = s.check()
     print("\n".join("! " + p for p in problems) if problems else "all good")
     return 1 if problems else 0
@@ -249,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
 
     def common(p):
         p.add_argument("--data-dir", help="folder holding dpd.db and deconstructor files (default: ./data)")
+        p.add_argument("--lang", choices=["pi", "sa"], help="the source language: pi Pāli (default), sa Sanskrit or Buddhist Hybrid Sanskrit")
 
     t = sub.add_parser("translate", help="translate Markdown or plain text")
     common(t)
@@ -288,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
     st.add_argument("--review-only", action="store_true")
     st.add_argument("--keep-source", action="store_true", help="keep the downloaded bf16 checkpoint")
     st.add_argument("--force", action="store_true")
+    st.add_argument("--sanskrit", action="store_true", help="instead of the models: download vidyut's data and the Cologne dictionaries (Edgerton, Monier-Williams, Apte) and build sanskrit.sqlite")
     st.set_defaults(func=cmd_setup)
 
     d = sub.add_parser("doctor", help="check data files and models")

@@ -1,5 +1,5 @@
-"""Streamlit interface: paste Pāḷi (Markdown or plain text), get a literal English translation, the
-DPD word-by-word table and the review log.  Run with ``kavi app`` or ``streamlit run src/kavi/app.py``."""
+"""Streamlit interface: paste Pāḷi or Sanskrit (Markdown or plain text), get a literal English translation, the
+word-by-word table and the review log.  Run with ``kavi app`` or ``streamlit run src/kavi/app.py``."""
 
 from __future__ import annotations
 
@@ -13,11 +13,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from kavi.config import Settings  # noqa: E402
 from kavi.dpd import DPD, analyse_text, analysis_table, special_words  # noqa: E402
 
-st.set_page_config(page_title="Kavi — Pāḷi to English", page_icon="📜", layout="wide")
+st.set_page_config(page_title="Kavi — Pāḷi and Sanskrit to English", page_icon="📜", layout="wide")
 
 
-@st.cache_resource(show_spinner="Opening the Digital Pāḷi Dictionary …")
-def get_dpd(db: str, decon_db: str, decon_json: str) -> DPD:
+@st.cache_resource(show_spinner="Opening the dictionaries …")
+def get_dpd(lang: str, db: str, decon_db: str, decon_json: str, data_dir: str):
+    if lang == "sa":
+        from kavi.sanskrit import SanskritLexicon
+        return SanskritLexicon(Path(data_dir))
     return DPD(Path(db), Path(decon_db), Path(decon_json))
 
 
@@ -31,38 +34,42 @@ settings = Settings()
 
 with st.sidebar:
     st.title("📜 Kavi")
-    st.caption("Literal Pāḷi → English. DPD word analysis, MITRA-QWEN translation, instruction-tuned review. Runs locally under MLX.")
+    st.caption("Literal Pāḷi or Sanskrit → English. Dictionary word analysis, MITRA-QWEN translation, instruction-tuned review. Runs locally under MLX.")
+    language = st.radio("Language", ["Pāḷi", "Sanskrit (and Buddhist Hybrid Sanskrit)"], horizontal=False)
+    lang = "sa" if language.startswith("Sanskrit") else "pi"
+    settings.use_language(lang)
     rounds = st.slider("Review rounds", 0, 5, settings.max_rounds, help="0 = translate only")
     sentence_words = st.slider("Sentence-by-sentence above (words)", 20, 200, settings.sentence_words)
     batch_words = st.slider("Review batch size (words)", 100, 1200, settings.eval_batch_words, step=50)
     thinking = st.checkbox("Let the reviewer think (slower)", value=settings.thinking)
     use_cache = st.checkbox("Use translation cache", value=True)
     glossary_text = st.text_area("Glossary (term: gloss per line)", value="", height=80,
-                                 help="Terms to keep in Pāḷi with a gloss, e.g. `sandhi: junction`")
+                                 help="Terms to keep in the source language with a gloss, e.g. `sandhi: junction`")
     with st.expander("Models and data"):
         translate_model = st.text_input("Translate model", settings.translate_model)
         review_model = st.text_input("Review model", settings.eval_model)
-        st.text(f"DPD: {settings.dpd_db}")
+        st.text(f"vidyut + Cologne: {settings.sanskrit_db}" if lang == "sa" else f"DPD: {settings.dpd_db}")
         problems = settings.check()
         if problems:
             for p in problems:
                 st.warning(p)
 
-st.header("Pāḷi text")
+st.header("Sanskrit text" if lang == "sa" else "Pāḷi text")
 uploaded = st.file_uploader("Upload a Markdown or text file", type=["md", "mdx", "txt"])
 default_text = uploaded.read().decode("utf-8") if uploaded else ""
 text = st.text_area("or paste it here", value=default_text, height=220,
-                    placeholder="Ekaṃ samayaṃ bhagavā bārāṇasiyaṃ viharati isipatane migadāye. …")
+                    placeholder="evaṃ mayā śrutam ekasmin samaye bhagavān śrāvastyāṃ viharati sma …" if lang == "sa"
+                    else "Ekaṃ samayaṃ bhagavā bārāṇasiyaṃ viharati isipatane migadāye. …")
 
 col1, col2 = st.columns([1, 1])
 do_analyse = col1.button("Analyse words only", use_container_width=True)
 do_translate = col2.button("Translate", type="primary", use_container_width=True)
 
 if (do_analyse or do_translate) and text.strip():
-    dpd = get_dpd(str(settings.dpd_db), str(settings.decon_db), str(settings.decon_json))
+    dpd = get_dpd(lang, str(settings.dpd_db), str(settings.decon_db), str(settings.decon_json), str(settings.data_dir))
     if do_analyse:
         analyses = analyse_text(dpd, text)
-        st.subheader("Word analysis (Digital Pāḷi Dictionary)")
+        st.subheader("Word analysis (vidyut and the Cologne dictionaries)" if lang == "sa" else "Word analysis (Digital Pāḷi Dictionary)")
         st.markdown(analysis_table(analyses))
         sp = special_words(analyses)
         for kind, items in sp.items():
@@ -70,11 +77,12 @@ if (do_analyse or do_translate) and text.strip():
                 st.caption(f"{kind}: " + ", ".join(f"{w} → {g}" for w, g in items))
         missing = [a.surface for a in analyses if not a.found]
         if missing:
-            st.info("Not in the DPD: " + ", ".join(missing))
+            st.info("Not in the dictionaries: " + ", ".join(missing))
     else:
         from kavi.pipeline import Translator
 
         s = Settings()
+        s.use_language(lang)
         s.max_rounds, s.sentence_words, s.eval_batch_words, s.thinking = rounds, sentence_words, batch_words, thinking
         s.translate_model, s.eval_model = translate_model, review_model
         if glossary_text.strip():
@@ -111,4 +119,4 @@ if (do_analyse or do_translate) and text.strip():
         with tab4:
             st.markdown(result.report())
 elif do_translate or do_analyse:
-    st.warning("Paste or upload some Pāḷi first.")
+    st.warning("Paste or upload some Sanskrit first." if lang == "sa" else "Paste or upload some Pāḷi first.")

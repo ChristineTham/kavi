@@ -32,6 +32,14 @@ Kavi needs the DPD's SQLite release `dpd.db` (2.3 GB, CC BY-NC-SA 4.0, Bodhirasa
 Get them from https://github.com/digitalpalidictionary/dpd-db/releases. The JSON is indexed once into
 `deconstructor.sqlite` on first use.
 
+For Sanskrit (`--lang sa`, Buddhist Hybrid Sanskrit included) `kavi setup --sanskrit` downloads
+[vidyut](https://github.com/ambuda-org/vidyut)'s linguistic data (81 MB, MIT: the kosha of inflected forms, the
+derivation engine) into `./data/vidyut/` and the Cologne Digital Sanskrit Dictionaries' text files of Edgerton's
+*Buddhist Hybrid Sanskrit Dictionary* (1953), Monier-Williams (1899) and Apte (1890) from
+https://github.com/sanskrit-lexicon/csl-orig (CC BY-NC-SA 3.0) into `./data/cologne/`, and builds
+`./data/sanskrit.sqlite` from them. Hybrid forms are read by the rules of Edgerton's *Buddhist Hybrid Sanskrit
+Grammar* in `src/kavi/bhs.py`, each with its paragraph number. The design is in `docs/sanskrit-scope.md`.
+
 ## Install and run
 
 ```bash
@@ -42,6 +50,8 @@ uv run kavi translate sutta.md -o sutta.en.md --report review.md --table words.m
 uv run kavi translate --text "Ekaṃ samayaṃ bhagavā bārāṇasiyaṃ viharati."
 uv run kavi analyse "Tatthodantāsarā aṭṭha."   # the DPD word table only
 uv run kavi app                           # Streamlit interface
+uv run kavi setup --sanskrit              # vidyut data + the Cologne dictionaries for Sanskrit
+uv run kavi translate --lang sa --interlinear heart.md    # Sanskrit or Buddhist Hybrid Sanskrit
 ```
 
 Useful flags: `--rounds N` (review rounds, default 5; `--no-review` for the draft only), `--glossary FILE`
@@ -103,7 +113,9 @@ At one time the Bhagavā dwells at Uruvelā on the bank of the river Nerañjarā
    its dictionary lemma, `🚹⨀①(bhagavant)`; a verb's voice, number, person and tense with its base verb,
    `🟢⨀🤟▶️(viharati)`; pronouns `*️⃣` with their person (⚧ for `amha` and `tumha`); particles and adverbs `⏏️`, a
    standalone prefix `🔼`; compounds `🆎(member+member)` from the DPD's compound analysis; participles, absolutives
-   and infinitives `🔽(affix)`; the niggahīta written `ṁ`;
+   and infinitives `🔽(affix)`; the niggahīta written `ṁ` (Sanskrit keeps `ṃ`); Sanskrit adds the dual `⨁`, the
+   periphrastic future `⏩` and the benedictive `⏫`, lemmas in stem form (`tad`, `bhagavat`), the avagraha
+   restored (`’nuttara` is `anuttara`), and a hybrid form's classical reading noted with Edgerton's paragraph;
 3. the glosses, one per token, separated by bars, with the punctuation carried along;
 4. the literal translation rearranged into a normal English sentence. A verse keeps one group of lines 1–3 per
    line and gives the stanza's translation once, line by line.
@@ -141,4 +153,9 @@ Translations are cached in `~/.cache/kavi/translations.json` by source text and 
 ## Licence
 
 Code: CC0. The DPD is CC BY-NC-SA 4.0 (consulted, not redistributed). MITRA-QWEN is Apache-2.0; if you publish its
-output, the model authors ask for a credit to the Dharmamitra project (https://dharmamitra.org).
+output, the model authors ask for a credit to the Dharmamitra project (https://dharmamitra.org). For Sanskrit:
+vidyut (Arun Prasad and the Ambuda project) is MIT; the Cologne Digital Sanskrit Dictionaries (Institute of
+Indology and Tamil Studies, University of Cologne, https://www.sanskrit-lexicon.uni-koeln.de) are CC BY-NC-SA 3.0
+and are consulted, not redistributed: Franklin Edgerton, *Buddhist Hybrid Sanskrit Grammar and Dictionary* (New
+Haven, 1953); Monier Monier-Williams, *A Sanskrit-English Dictionary* (Oxford, 1899); Vaman Shivaram Apte, *The
+Practical Sanskrit-English Dictionary* (Poona, 1890).

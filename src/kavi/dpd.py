@@ -26,7 +26,7 @@ CASE = {"nom": "nominative", "acc": "accusative", "instr": "instrumental", "dat"
         "gen": "genitive", "loc": "locative", "voc": "vocative"}
 NUMBER = {"sg": "singular", "pl": "plural", "dual": "dual"}
 TENSE = {"pr": "present", "aor": "aorist (past)", "imp": "imperative", "opt": "optative", "fut": "future",
-         "imperf": "imperfect", "perf": "perfect", "cond": "conditional"}
+         "imperf": "imperfect", "perf": "perfect", "cond": "conditional", "pfut": "periphrastic future", "bened": "benedictive"}
 PERSON = {"1st": "1st person", "2nd": "2nd person", "3rd": "3rd person"}
 OTHER = {"reflx": "reflexive (attanopada)"}
 POS = {
@@ -34,12 +34,12 @@ POS = {
     "cs": "conjugational sign", "fem": "feminine noun", "fut": "future verb", "ger": "gerund", "idiom": "idiom",
     "imp": "imperative verb", "imperf": "imperfect verb", "ind": "indeclinable", "inf": "infinitive", "letter": "letter",
     "masc": "masculine noun", "nt": "neuter noun", "opt": "optative verb", "ordin": "ordinal number",
-    "perf": "perfect verb", "pp": "past participle", "pr": "present-tense verb", "prefix": "prefix", "pron": "pronoun",
+    "perf": "perfect verb", "pfut": "periphrastic future verb", "bened": "benedictive verb", "pp": "past participle", "pr": "present-tense verb", "prefix": "prefix", "pron": "pronoun",
     "prp": "present participle", "ptp": "potential participle", "root": "root", "sandhi": "sandhi form",
     "suffix": "suffix", "ve": "verbal ending",
 }
 NOUN_POS = {"masc", "fem", "nt", "pp", "prp", "ptp", "adj", "card", "ordin", "pron", "noun"}
-VERB_POS = {"pr", "aor", "fut", "imp", "opt", "perf", "imperf", "cond", "verb"}
+VERB_POS = {"pr", "aor", "fut", "imp", "opt", "perf", "imperf", "cond", "pfut", "bened", "verb"}
 INDECL_POS = {"ind", "prefix", "sandhi", "particle", "suffix", "idiom", "letter", "cs", "ve", "abbrev", "inf", "abs"}
 
 PUNCT = "‘’“”\"'.,;:?!()[]{}|*_`«»‹›=+/\\"
@@ -370,7 +370,7 @@ class DPD:
 # Tokenising and rendering
 # ------------------------------------------------------------------------------------------
 
-WORD_RE = re.compile(r"[A-Za-zĀāĪīŪūṂṃṀṁṄṅÑñṬṭḌḍṆṇḶḷ’']+")
+WORD_RE = re.compile(r"[A-Za-zĀāĪīŪūṂṃṀṁṄṅÑñṬṭḌḍṆṇḶḷṚṛṜṝḸḹŚśṢṣḤḥ’']+")
 
 
 SENTENCE_START_RE = re.compile(r"(?:^|[.?!।॥—–\-:;\n]|[\[(“‘\"'*_#>|]|^\s*\d+\.)\s*$")
@@ -381,7 +381,7 @@ def _clean(text: str) -> str:
     text = re.sub(r"!?\[[^\]]*\]\([^)]*\)", " ", text)          # links
     text = re.sub(r"https?://\S+", " ", text)
     text = re.sub(r"%%\d+%%", " ", text)                        # placeholders
-    return text.replace("ṁ", "ṃ")
+    return text.replace("ṁ", "ṃ").replace("-", " ")
 
 
 def tokens_with_position(text: str) -> list[tuple[str, bool]]:
