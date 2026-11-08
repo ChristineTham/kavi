@@ -169,7 +169,7 @@ hybrid layer (phase 2) the other week. Each phase ends with its tests and a samp
   Sanskrit or Pāḷi form, `Śāriputra`/`Sāriputta`?), the symbols for the dual and the two extra tenses, whether
   technical terms are shown in the text's own form (`dharmaḥ` (the Dharma)), and which texts to test on first.
 
-## 6. Implementation status (2026-11-02)
+## 6. Implementation status (2026-11-03)
 
 Phases 0, 1, 3 and the systematic part of 2 are in place; the author's rulings were: replicate the Pāḷi glossary as
 far as the cognates allow, names stay in Sanskrit; new symbols from Unicode for the forms Pāḷi lacks; technical terms
@@ -247,6 +247,110 @@ mistakes.
   lacuna marks and fragments, the rest the manuscript's own slips (`buddabodhiṃ`, `dharmaḥsa`) and sandhi
   spellings the lexicon has since learnt (`cchrutvā`, `bahavas`, `anuprāpnuyuś`, `paryavāpnuyād`). The page now
   carries an Interlinear tab in all twenty-three sections that have Sanskrit, and builds clean.
+- **The Mūlamadhyamakakārikā's lessons** (2026-11-03, Nāgārjuna's 449 verses from the DSBC text, for a page of
+  buddhavacana with a Translation, Sanskrit and Interlinear tab per chapter): a negated word the dictionaries have
+  only unnegated (`anirodha`, `anirgama`, `anānārtha`) is read on the model stems as na + the word they know, with
+  the kosha's own derivation kept (`amithyātva` = na + mithyā + tva) and the base word's gender; both readings of a
+  word in `an-` are tried (`a + nirodha`, not `an + irodha`) and decided without a full analysis; a chain of such
+  words splits (the maṅgala's `anirodham anutpādam anucchedam aśāśvatam` and its second line); among the sandhi
+  splits of a word, one whose parts are all words, or sound compounds of known words (`na + avidyākṣayo`), wins
+  over one with a scrap, and then the fewer parts (`nāpyahetutaḥ` = na + api + ahetutaḥ, the table's `nāpi`
+  opened out; `tathāgatāya + arhate` over a three-member compound of the same quality); a split at a consonant
+  (`parān + ugrāhakaṃ`) never admits a pronoun followed by a compound reading, since that is what every compound
+  looks like; a three-letter part must be the word itself (`īni` is not the particle `ī`); `nā-` before a consonant
+  with no direct reading is na + a- (`nānyat`, `nārhati`, `nāpratyayavatī`); a name in the vocative is never
+  penalised (`Subhūte`), a feminine ā-stem read only as a vocative or a dual is (`vande` is the verb); `dve` and
+  `ubhe` are duals only, `ādīni` is `ādi` (the kosha has only `ādin` "eating"), a taddhita in `-vat`, `-mat`,
+  `-vin`, `-min` on an ī-feminine is the adjective (`pratyayavatī`) and never a chance name. A recursion
+  (`_resolve → _by_model → _make_noun → _expand_members → _compound_splits → _resolve`) is cut by a guard. The
+  DSBC's own slips (`kecanaḥ`, `ārambaṇam` for `ālambanam`, a doubled `r`, a lost anusvāra) stay unread, as they should.
+- **The Mūlamadhyamakakārikā's second lesson: the consonant junctions and the ranking of splits** (2026-11-03, after the
+  first full run left 122 tokens unread and skipped three verses as "not Sanskrit"; settled over five scans of all 2,096
+  distinct tokens of the text with `scratchpad/mmk/scan_all.py`, each scan read for junk chains, and the 110 unread forms
+  probed after every change). The DSBC writes the sandhi of a word's final consonant with the next word's initial inside
+  one token, and `_sandhi_splits` now cuts those junctions too: a visarga written `r` before a voiced consonant after `i`,
+  `u`, `e`, `o`, `ṛ`, `ai` (`siddhir na`, `hetur jāyate`, `anayor na`, `tair gatiṃ`; never after `a` or `ā`, so `svapaḥ +
+  ātmānau` is no reading), `cc`/`cch`/`jj`/`dd`/`ddh`/`nn`/`nm`/`ll`/`ṃst`/`ṃśc`/`ñj` for a final `t`, `d` or `n` (`tac ca`,
+  `tasmāc chubham`, `syāj jāyate`, `kecid dhi`, `yan na`, `imāl lokaḥ`, `tāṃs tān`, `skandhāṃś ca`, `yāñ janāḥ`), `g` for a
+  final `k` (`vāg viṣpandaḥ`), `ṭ` written `ḍ` (`ṣaḍ eteṣāṃ`), `ar` for `a + ṛ` (`tathā ṛṇam`), `o` for `a + ū`
+  (`cordhvam`), `āv`/`āy` before a vowel for `au`/`ai` (`ubhāv utpādayet`), a final `n` doubled before a vowel (`bhajyerann
+  utpadyeran`), a `y` or `v` junction only after a consonant (`pratyai` is no word), an avagraha dropped after `ca`
+  (`casau`), a verb's final `e` written `a` before a vowel (`utpadyata ime`), `datvā` for `dattvā`; `cet`, `vinā`, `ṛte`,
+  `tridhā`, `āho`, `sat`, `asat`, `ṣaṭ`, `ādi`, `abhūm` and the first-person middle endings (`prajñapayemahi`) are known,
+  `moha` is masculine whatever the dictionary says, and the hand-listed nominals come before the kosha's chance verbs
+  (`asat` is not an imperfect of `sas`). A chain may hold an inflected compound as a part (`cittasaṃtānaḥ + cetasaḥ`,
+  `syāt + apradīpanahetukaḥ`, `vyayasya + apunarutpatteḥ + hetūcchedaḥ`) when it is sound on its member surfaces
+  (`_good_info`: two to four members, none a scrap under four letters, none ending in a visarga or its `s` before `t`/`c`,
+  none beginning like no word, the last a nominal (an `-ādi`, a bare `i`/`u` stem, `prabhṛti` count) and no pronoun
+  proper or finite verb, a feminine `-ā` only where the dictionaries allow it, no bare negation of a plain word and no
+  negation before a prefix, no absolutive member (`apekṣya + agniḥ`) unless it is also an adjective of an uncommon verb
+  (`ananya`) or `pratītya` before `samutpāda`, no inflected pronoun member (`iyam + ātmānam`), every member weighed as
+  written with its own compound reading and a negation's base counting (`upādāna`, not `upā + dāna`; `parātmānau` =
+  para + ātman; `ananya` as `anya`), and a compound the dictionaries list (`jarāmaraṇa`, `pratītyasamutpāda`) counting
+  as one piece), and chains may be eight words long (`nābhūm atītam adhvānam ity etan nopapadyate`). The remainder of a
+  junction is tried both as one word and as a chain, and the ranking decides, in this order and no other (every other
+  order tried let chains of chance words beat sound compounds or the reverse): every part a word; the fewest chance
+  readings (a noun no dictionary weighs, a hybrid reading, a form modelled on a stem only vidyut lists, a chance verb: a
+  rare tense or an imperative of an uncommon verb, or a first or second person or dual of one with no meaning; an
+  avagraha-less `aḥ + a` junction counts as one, since the text writes its avagrahas; a vocative alone is no word); the
+  fewest pieces with a particle counting half (`tāvat + na + apratyayāḥ` before `tau + annāpratyayāḥ`, `tasmāt + na +
+  atra` before `tasmāt + nātrā`); the most particles (indeclinables and the hand-listed verb forms); the fewest parts; a
+  negation before its `ā-` twin (`abhāvaḥ`, `asthitaḥ`); the strongest words (a particle, pronoun or verb of a common verb
+  before a noun; `apekṣya` before `apekṣyā`, `tayā` before `taya`); the dictionaries' weights (a verb form by its verb,
+  ten if common, else three, never by its suffix `māna`); a short initial vowel last. A negated absolutive or participle
+  the dictionaries lack is one word (`abhūtvā`, `anupādāya`, `ajanitaḥ`, `anupālabdhaṃ`), read ahead of a dative of a
+  stem vidyut invents (`anupāda`) and of a participle of a verb that does not exist (`apaśyati`); a double negation is
+  none (`an + asādhya`); `a + tmānam` is not a + the Vedic `tman`; a negation's base may be a term of the text whatever
+  its weight (`agantā`), takes any gender when the dictionaries call it an adjective too (`gantṛ`), and a compound in
+  `-a` may be a bahuvrīhi in any gender (`anupādāno`); the `-tva`/`-tā` abstracts are modelled (`anyatvam`,
+  `nirapekṣatvāt` neuter, `ahetukatā` = na + hetuka + tā); a participle of a prefixed verb the kosha lacks is read like
+  its finite forms (`anuvarṇitām`, `abhirūḍhaḥ`, `upādattam`), also when the direct readings are only chance verbs; the
+  common-verb list carries the verbs of the argument (`apekṣate`, `upapadyate`, `prasajyate`, `nirvāti`, `pratyeti` …) and
+  is consulted behind a negation (`anapekṣate`); a sure split (particle or pronoun first) is taken only when it is also
+  the best-ranked; in the pair-versus-compound rule a compound's quality is measured on its surfaces, a pair of modelled
+  or hybrid words is not plain, a negated known word stays whole, and a pair that merely cuts the compound loses to it
+  (`prajñāpāramitā + caryāṃ`). `KAVI_DEBUG_SPLITS=1` prints every candidate split with its score and each part's reading,
+  and the pair-versus-compound decision. What remains wrong is what only the sense decides (`nāsi ādiḥ` for `na asya
+  ādiḥ`, `tat śeṣamuktaṃ` for `tat śeṣam uktaṃ`, `sannāsanna`) and goes into the page's postfix table with the DSBC's
+  slips and the one-letter preposition `ā` (`tiṣṭhaty ā pākakālāt`).
+- **The Mūlamadhyamakakārikā's third lesson: the function words and the dictionary's hyphenation** (2026-11-03, after
+  the full interlinear run of the 449 verses was read token by token): `kutaḥ` read as a name (`kuta` masc nom sg, 34
+  times), `tataḥ` as `tata`, `kathaṃ` as the accusative of Edgerton's `katha`, `saḥ` as the prefix `sa-`, `sati` as a
+  hybrid vocative, `asati` as a present of `as` "throw", `asti` as Edgerton's asseverative particle, `janayate` as the
+  vocative of a feminine `janayati`, `dharma utpadyate` with `dharma` only a vocative, `prahāṇa` as `prahā + ṇa`,
+  `upādāna` as `upā + dāna`, `svarga` as `svar + ga`, `nanu` as `na + nu`, `atra` as `na + tra`, `vikalpataḥ` as `vikalpa
+  + ta`, `tiraskṛtya` as a gerundive of `tiraskṛṇatti`. The causes and the rules: the `PARTICLES` filter keeps an
+  indeclinable only when its stem is spelt as `INDECLINABLES` spells it, so the kosha's `kutas` fell to the filter made
+  for `kutaḥ` — the table now carries the kosha's spelling (`kutas`, `tatas`) and the common adverbs a nominal homonym
+  shadows under the pronoun-before-particle rule (`katham`, `kutra`, `yatra`, `anyatra`, `paratra`, `sarvatra`, `ekatra`,
+  `sarvadā`, `ekadā`, `kadā`, `nanu`, `prāk`, `jātu`, `kvacit`, `kvacana`, `kuha`, `anyathā`, `uta`, `mithyā`, `svayam`);
+  `ceti`, `yacca`, `tacca`, `athāpi`, `cāsau`, `nātra`, `yāvanna`, `tāvanna` are `SANDHI_PAIRS`; a bare `-a` before a vowel
+  is judged on its own stem's entries (`dharma` is only a vocative of `dharma`, whatever `dharman`'s neuter forms say), so
+  the nominative with its visarga lost is read, and the indeclinable the `-a` may be (`kuta eva`) — such a reading is
+  marked in its grammar and counts for nothing as a non-final part of a split, since a visarga-lost word stands before
+  a space and is never joined to the next word (`rūpe 'satyeva` is `asati + eva`, not `asatya + eva`; `anavasthaivaṃ`
+  keeps `anavasthā`); `anyathā` and `mithyā` are not particles of the table, being members of `anyathābhāva`,
+  `mithyādṛṣṭi`; the hybrid vocative in
+  `-i` (Edg. § 10.33) comes after the verbs, pronouns and participles (`sati` is the participle `sat`; `bodhi` keeps the
+  vocative first); a word of the common-verb list is the verb, not an avyaya spelt alike (`asti`); the kosha's nominal
+  entries for the prefixes `sa-`, `su-`, `dus-`, `ku-` are no words (`PREFIX_ONLY`); a stem that is itself a finite verb
+  form is not a nominal stem, in `_direct` and `_by_model` (`janayate`), and the verb-ending readings of Edgerton's
+  chapters 25–37 are tried when no finite verb reads (`janayate` = `janayati` with the middle ending, §§ 37.24–25) — beside
+  other readings only the voice rules and only a common verb (not `mahate` as `mahati`, not `sati` as `santi`); an adverb
+  in `-tas` on a known stem is read (`vikalpatas`, `dhātutas`, tasil); a negated participle of a common verb ranks with
+  the verbs (`asati` = na + sat of `asti` before the chance present), and a present of a verb outside the common list is no
+  anchor in a split (`hetau + asati`, not `hetā + āvasati`); Monier-Williams' members are shown only when each is a word
+  of three letters or more with a weight (`svar—ga`, `taj—ja`, `prahā—ṇa`, `upā-dāna`, `pañca—dhā`, `niś—caya` are one
+  word; `SUFFIX_PARTS` has `dhā`, `śas`, `dā`, `tra`; `PREFIX_SANDHI` the prefixes as MW writes them before a member); an
+  absolutive on a root the kosha cites by another present is read through `ABSOLUTIVE_ROOTS` (`tiras-kṛtya`: `karoti`);
+  an adverb in `-tas` or a particle is no compound member (`sa + nipa + atas + tri`). What the review still had to fix by
+  hand, for the lexicon's next round: a `-tā` agent noun read as a periphrastic future (`gantā`, `kartā`, `bhoktā`),
+  `kiṃcit` as a noun, `kasya` as `ka`, `parakṛtam` as `parakṛti`, `tad eva` as `tadā + iva`, the ātmanepada past tenses
+  marked active, a neuter accusative given as nominative, `hetoḥ` as an ablative, the one-place shift of the model's
+  glosses after a token it could not read, the `-m` junction inside a word the chain splitter cuts into scraps
+  (`utpādotpādam utpādo`, `kriyādīnām asaṃbhave`, `sadbhāvam anupaśyasi`), and a compound reading that stands beside the
+  right pair for the model to choose (`asatyalakṣaṇe`: `na + satya + lakṣaṇa` beside `asati + alakṣaṇe`, the locative
+  absolute); `athāpyanantavāllokaḥ` still reads in isolation and not in the full scan (an order-dependent cache).
 - **Still open**: the rest of Edgerton's tables (verbs of chapters 25–43, the pronoun and numeral chapters) as
   rules; the Dharmamitra analyser as an alternative segmenter; an evaluation harness; the kosha's junk stems
   (`vastum` as a masculine, `rūp`) are suppressed by rank, not removed.

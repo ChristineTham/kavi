@@ -110,3 +110,60 @@ rūpakāya: form-body
 piṇḍagrāha: grasp of substance | seizing a mass
 ātmadṛṣṭi: view of self
 sma: (past)
+# the Madhyamaka vocabulary, for Nāgārjuna's Mūlamadhyamakakārikā (2026-11-03): pratyaya "cause" after the Pāḷi glossary's
+# paccaya, so hetu, the first of the four causes, is the "primary cause"; āryasatya "realisation" after ariyasacca; bhāva
+# the "existent" (a thing that exists), svabhāva "intrinsic nature"; saṃskṛta "constructed" as the author's Diamond page has it
+hetu: primary cause | cause, reason, root cause
+ālambana: objective support | object, object-condition, objective basis
+samanantara: immediate antecedent | immediately preceding, antecedent condition
+adhipati: dominant cause | dominant condition, predominant, dominant
+svabhāva: intrinsic nature | inherent existence, own-being, self-nature, essence, own nature, intrinsic existence
+parabhāva: extrinsic nature | other-being, other-nature
+bhāva: existent | thing, entity, existence, being
+abhāva: non-existent | non-existence, nonexistence, absence, non-being
+utpāda: arising | origination, production, birth
+sthiti: enduring | duration, abiding, persistence
+bhaṅga: dissolution | destruction, perishing, cessation
+saṃbhava: coming to be | becoming, origination, arising
+vibhava: passing away | destruction, dissolution, non-becoming
+saṃskṛta: constructed | conditioned, compounded, composite
+asaṃskṛta: unconstructed | unconditioned, uncompounded
+āryasatya: realisation | noble truth, pure truth
+ārya: liberated | noble, pure, holy
+saṃvṛti: convention | conventional, concealment, relative
+paramārtha: ultimate | ultimate truth, absolute, highest meaning
+prapañca: proliferation | conceptual proliferation, conceptual elaboration, verbal proliferation, diffuseness
+viparyāsa: distortion | inversion, perversion, error, misconception
+bandhana: bondage | bonds, fetters, binding
+mokṣa: release | liberation, freedom, emancipation
+gati: going | motion, movement, passage
+gantṛ: goer | mover, one who goes
+gamana: motion | going, movement
+kartṛ: agent | doer, actor, maker
+kāraka: agent | doer, actor
+phala: fruit | result, effect, consequence
+kāla: time
+tattva: reality | truth, real nature, thatness, suchness
+dṛṣṭi: view | opinion, wrong view, theory
+rāga: passion | lust, desire, attachment
+rakta: the impassioned | one who is impassioned, the passionate one
+dveṣa: hatred | aversion, hate, anger
+moha: delusion | confusion, ignorance, bewilderment
+saṃsarga: conjunction | contact, association, union, combination
+upādātṛ: taker of fuel | appropriator, one who clings, grasper
+indhana: firewood | fuel, kindling
+agni: fire
+ākāśa: space | ether, sky
+nitya: permanent | eternal
+śāśvata: eternal | permanent, eternalist
+uccheda: annihilation | cutting off, destruction, nihilism
+anta: extreme | end, limit
+madhyamā pratipad: middle way | middle path
+prajñapti: designation | conventional designation, concept, nominal designation
+vyavahāra: convention | conventional usage, everyday practice, transaction
+loka: world
+sukha: happiness | pleasure, ease, bliss
+jñāna: knowledge | cognition, gnosis
+prajñā: wisdom | insight, discernment
+buddha: Buddha | awakened one, enlightened one
+dvādaśāṅga: twelve links | twelve limbs, twelve factors
