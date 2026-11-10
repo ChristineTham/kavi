@@ -351,6 +351,17 @@ mistakes.
   (`utpādotpādam utpādo`, `kriyādīnām asaṃbhave`, `sadbhāvam anupaśyasi`), and a compound reading that stands beside the
   right pair for the model to choose (`asatyalakṣaṇe`: `na + satya + lakṣaṇa` beside `asati + alakṣaṇe`, the locative
   absolute); `athāpyanantavāllokaḥ` still reads in isolation and not in the full scan (an order-dependent cache).
+- **Pāṇinian rules and Ambuda DCS frequencies** (`src/kavi/panini.py`, 2026-11-11): codifies Pāṇini's *Aṣṭādhyāyī*
+  morphophonemic and derivational rules alongside Kaccāyana's *Sandhikappa* and Edgerton's *BHSG* — external *ac*,
+  *hal* and *visarga/rutva* sandhi (including 8.3.14 ``ro ri`` + 6.3.111 ``ḍhralope pūrvasya dīrgho 'ṇaḥ`` and 8.3.36–37
+  ``vā śari`` / ``kupvoḥ``), internal *ṇatva* (8.4.1–14) and *ṣatva* (8.3.59) across prefix and compound boundaries,
+  *cvi* stems before ``kṛ``/``bhū`` (5.4.50), *samāsānta* stem alternations (5.4.68–154), *taddhita* initial *vṛddhi*
+  reversal (7.2.117), and ``-tṛ`` agent nouns (3.1.133 & 4.1.5 vs 4.1.10 ``na ṣvasrādibhyaḥ``, so ``kartā``, ``gantā``
+  and ``bhoktā`` rank as masculine nominative singular agent nouns ahead of the periphrastic future). Incorporates
+  attested Buddhist Sanskrit compound-member and lemma frequency sets from Śāntideva's *Bodhicaryāvatāra* and
+  Aśvaghoṣa's *Saundarananda* in ``ambuda-org/dcs`` (CC-BY 4.0); extends model-stem ending length to seven characters
+  (``-ebhyaḥ``, ``-ībhyaḥ``, ``-ābhyām``), filters root-only and single-letter entries out of nominal and compound
+  member checks, and resolves ``kiṃcit``, ``kasya``, ``parakṛtam``, ``tad eva`` and ``utpādotpādam utpādo``.
 - **Still open**: the rest of Edgerton's tables (verbs of chapters 25–43, the pronoun and numeral chapters) as
   rules; the Dharmamitra analyser as an alternative segmenter; an evaluation harness; the kosha's junk stems
   (`vastum` as a masculine, `rūp`) are suppressed by rank, not removed.

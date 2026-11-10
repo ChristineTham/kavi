@@ -34,6 +34,7 @@ dukkhakkhandha: mass of suffering
 nirodha: cessation
 samudaya: origin
 nibbāna: extinguishment
+niṭṭhānibbāna: ultimate extinguishment (of suffering) | ultimate extinguishment
 # an entry with no gloss marks a term whose rendering depends on context: the checker leaves it to the translator
 dhamma:    # principle, characteristic or phenomena by context (teaching, doctrine in some)
 kamma: action
@@ -70,6 +71,8 @@ upekkhā: equanimity | mental balance, mental poise, non-reactivity   # DPD
 sotāpanna: stream-enterer
 arahant: liberated one | perfected one, awakened being, worthy one
 tathāgata: thus-gone one
+sabbaññu: All Knowing | omniscient, the omniscient one
+sabbaññū: All Knowing | omniscient, the omniscient one
 citta: mind
 cetasika: mental factor
 saññā: apperception | perception, recognition

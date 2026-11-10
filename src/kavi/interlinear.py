@@ -21,7 +21,7 @@ import json
 import re
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
@@ -30,7 +30,8 @@ from .dpd import DPD, Analysis, Headword, VERB_POS, lemma_clean, normalise, pars
 from .glossary import honorific_form
 from .grammar import to_symbol
 from .language import LANGUAGE, PRONOUNS, SABBANAMA, set_language
-from .lint import lint
+from .lint import lint, HONORIFICS, HONORIFIC_MEANINGS, _clean_dict_gloss
+from .models import clear_metal_cache
 from .segment import Block, parse_markdown, split_sentences
 
 Progress = Callable[[str], None]
@@ -428,6 +429,26 @@ def system_prompt() -> str:
     return SYSTEM_TEMPLATE.format(lang=LANGUAGE["name"])
 
 
+def format_mantra(src: str, tr: str) -> str:
+    """If a unit contains a mantra or dhāraṇī (e.g. ending in svāhā), format as: mantra (translation)."""
+    if "svāhā" not in src.lower() and "svaha" not in src.lower():
+        return tr
+    m = re.search(r'\b((?:oṃ\s+|om\s+)?(?:gate\s+gate\s+pāragate\s+pārasaṃgate\s+bodhi\s+svāhā|[a-zāīūṛḷeaiouṃḥkgṅcjñṭḍṇtdnpbmyrlvśṣsh\s-]+svāhā))\b', src, re.I)
+    if not m:
+        return tr
+    mantra = m.group(1).strip('- ')
+    mantra = re.sub(r"^(?:tadyathā[-:\s]+)", "", mantra, flags=re.I).strip()
+    if mantra.lower() in tr.lower():
+        return tr
+    intro_m = re.match(r'^(as follows:\s*|tadyathā:\s*|thus:\s*)?(.*)', tr, re.I)
+    intro = intro_m.group(1) if intro_m else ''
+    content = intro_m.group(2) if intro_m else tr
+    content = content.strip(' .')
+    if content.startswith('(') and content.endswith(')'):
+        content = content[1:-1]
+    return f"{intro}{mantra} ({content})."
+
+
 def prompt_for(unit_text: str, tokens: list[Token], glossary: dict[str, str], context: list[tuple[str, str]]) -> str:
     lines = [f"Sentence: {unit_text}"]
     if context:
@@ -447,9 +468,16 @@ def prompt_for(unit_text: str, tokens: list[Token], glossary: dict[str, str], co
     rules = [
         "For every word choose the candidate whose grammatical form the sentence requires: an adjective or participle agrees with its noun in gender, number and case; the verb's person and number are its subject's; a locative absolute takes the locative participle.",
         "The gloss renders only that word in that form, in one to four English words, with the preposition the case needs where English needs one (\"by me\", \"in the night\", \"of the week\"), and no explanation.",
-        f"Names stay in their {LANGUAGE['name']} stem form; honorifics and titles stay as they stand in the text " + ("(Bhagavān, bhikṣavaḥ, āyuṣman)." if LANGUAGE["code"] == "sa" else "(Bhagavā, bhikkhave, bhante)."),
-        f"The translation renders every word of the sentence, keeps a present-tense verb in the present, is rearranged into a normal English sentence, and adds nothing that the {LANGUAGE['name']} does not say.",
     ]
+    if LANGUAGE["code"] == "sa":
+        rules.extend([
+            f"Vocatives and honorifics must NOT be translated: in both word glosses and the sentence translation, leave any vocative address and any honorific untranslated as it stands in the text (e.g. Bhagavān, bhikṣavaḥ, āyuṣmān, bhadanta, Śāriputra, Maitreya; never 'the Blessed One', 'venerable', 'venerable sir', 'O monks', 'monks', etc.). Names stay in their {LANGUAGE['name']} stem form.",
+            "Buddhist technical terms must remain in their original form (e.g. pratītyasamutpāda, nirvāṇa, dharma, skandha, saṃskāra, svabhāva).",
+            "For mantras and dhāraṇīs (such as the Heart Sūtra mantra), output the original mantra text followed by the English translation in parentheses: e.g. gate gate pāragate pārasaṃgate bodhi svāhā (gone, gone, gone to the other shore, gone completely to the other shore, awakening, svāhā).",
+        ])
+    else:
+        rules.append(f"Names stay in their {LANGUAGE['name']} stem form; honorifics and titles stay as they stand in the text (Bhagavā, bhikkhave, bhante).")
+    rules.append(f"The translation renders every word of the sentence, keeps a present-tense verb in the present, is rearranged into a normal English sentence, and adds nothing that the {LANGUAGE['name']} does not say.")
     if used:
         rules.append("These technical terms take these glosses: " + "; ".join(used) + ".")
     lines.append("\nRules:")
@@ -457,6 +485,14 @@ def prompt_for(unit_text: str, tokens: list[Token], glossary: dict[str, str], co
     lines.append('\nAnswer with JSON only, one entry per numbered word above, repeating the word, in this form: '
                  '{"words": [{"n": 1, "word": "evaṁ", "parse": 1, "gloss": "thus"}, {"n": 2, "word": "me", "parse": 3, "gloss": "by me"}], "translation": "…"}')
     return "\n".join(lines)
+
+
+def _clean_quotes(s: str) -> str:
+    """Unescape stray \\" and \\' sequences that the model sometimes emits around quoted speech in JSON."""
+    s = re.sub(r'\\+(["\'])', r"\1", s)
+    s = re.sub(r"\\+$", "", s)
+    s = re.sub(r"\\\\+", "", s)
+    return s.strip()
 
 
 def parse_answer(text: str, tokens: list[Token]) -> tuple[dict[int, int], dict[int, str], str]:
@@ -471,11 +507,18 @@ def parse_answer(text: str, tokens: list[Token]) -> tuple[dict[int, int], dict[i
                 break
             except json.JSONDecodeError:
                 continue
+    words_list = data.get("words", []) if isinstance(data, dict) else []
+    if not words_list:
+        for m in re.finditer(r'\{[^{}]*"n"\s*:\s*\d+[^{}]*\}', text):
+            try:
+                words_list.append(json.loads(m.group(0)))
+            except json.JSONDecodeError:
+                continue
     choice: dict[int, int] = {}
     gloss: dict[int, str] = {}
     surfaces = [normalise(getattr(t, "surface", "") or "") for t in tokens]
     cursor = 0
-    for w in data.get("words", []) if isinstance(data, dict) else []:
+    for w in words_list:
         if not isinstance(w, dict):
             continue
         n = None
@@ -498,12 +541,17 @@ def parse_answer(text: str, tokens: list[Token]) -> tuple[dict[int, int], dict[i
                 pass
             g = w.get("gloss")
             if isinstance(g, str) and g.strip():
-                gloss[n] = g.strip()
+                gloss[n] = _clean_quotes(g)
     translation = data.get("translation", "") if isinstance(data, dict) else ""
     if not translation:
-        for m in re.finditer(r'"translation"\s*:\s*"((?:[^"\\]|\\.)*)"', text):
-            translation = m.group(1).encode().decode("unicode_escape") if "\\u" in m.group(1) else m.group(1).replace('\\"', '"')
-    return choice, gloss, (translation or "").strip()
+        m_full = re.search(r'"translation"\s*:\s*"(.*)"\s*\}', text, re.S)
+        if m_full:
+            raw_tr = m_full.group(1)
+            translation = raw_tr.encode().decode("unicode_escape") if "\\u" in raw_tr else raw_tr
+        else:
+            for m in re.finditer(r'"translation"\s*:\s*"((?:[^"\\]|\\.)*)"', text):
+                translation = m.group(1).encode().decode("unicode_escape") if "\\u" in m.group(1) else m.group(1)
+    return choice, gloss, _clean_quotes(translation or "")
 
 
 # --------------------------------------------------------------------------------------
@@ -523,7 +571,20 @@ class Unit:
 
     @property
     def analyses(self) -> list[Analysis]:
-        return [t.analysis for t in self.tokens if t.analysis is not None]
+        out: list[Analysis] = []
+        for t in self.tokens:
+            if t.analysis is None:
+                continue
+            if t.chosen and t.chosen.headword:
+                ch = t.chosen.headword
+                if t.chosen.case:
+                    p_str = " ".join(x for x in (t.chosen.gender, t.chosen.case, t.chosen.number) if x)
+                    ch = replace(ch, parses=[p_str])
+                rest = [h for h in t.analysis.headwords if h is not t.chosen.headword]
+                out.append(replace(t.analysis, headwords=[ch] + rest))
+            else:
+                out.append(t.analysis)
+        return out
 
     def analysis_line(self) -> str:
         return " ".join(t.parse.symbols() for t in self.tokens)
@@ -613,6 +674,22 @@ def is_pali(dpd, text: str) -> bool:
     return english / len(words) < 0.2 and known / len(words) >= 0.6
 
 
+def units_pieces(text: str, segments: list[tuple[str, str]] | None, para_no: int, seg_pos: int) -> tuple[list[tuple[str, str]], int, bool]:
+    """The (number, source) pieces of one paragraph; (pieces, next segment position, verse?)."""
+    lines = [ln for ln in text.split("\n") if ln.strip()]
+    verse = len(lines) > 1 and all(len(ln.split()) <= 12 for ln in lines)
+    pieces: list[tuple[str, str]] = []
+    if segments:
+        m = match_segments(text, segments, seg_pos)
+        if m:
+            pieces, seg_pos = m
+    if not pieces:
+        parts = [ln.strip() for ln in lines] if verse else split_sentences(" ".join(lines))
+        parts = [x for x in parts if re.search(r"[^\W\d_]", x)]      # "| ||": a piece of punctuation alone is no unit
+        pieces = [(f"{para_no}.{i}", x) for i, x in enumerate(parts, 1)]
+    return pieces, seg_pos, verse
+
+
 class Interlinear:
     def __init__(self, settings: Settings, dpd: DPD, models, model_role: str = "review", progress: Progress | None = None,
                  use_cache: bool = True):
@@ -624,6 +701,7 @@ class Interlinear:
         self.progress = progress or (lambda msg: sys.stderr.write(msg + "\n"))
         self.calls = 0
         self._glossed: set[str] = set()
+        self._seen_spans: set[str] = set()
         self.cache_path = settings.cache_dir / "interlinear.json" if use_cache else None
         self.cache: dict[str, dict] = {}
         if self.cache_path and self.cache_path.exists():
@@ -668,7 +746,16 @@ class Interlinear:
                     for alt in sorted(alts, key=len, reverse=True):
                         t.gloss = re.sub(r"\b" + re.escape(alt) + r"s?\b", glossary[stem], t.gloss, flags=re.I)
             h = t.chosen.headword if t.chosen else None
-            if h is not None:
+            is_voc = (h is None or (h.pos != "ind" and h.kind != "name")) and (
+                (t.chosen and t.chosen.case == "voc") or (not t.chosen and h and bool(h.parses) and all("voc" in p for p in h.parses))
+            )
+            is_hon = (h and h.kind != "name" and (h.kind == "honorific" or h.stem.lower() in HONORIFICS or h.stem.lower() in HONORIFIC_MEANINGS)) or is_voc
+            if is_voc and not is_hon:
+                t.gloss = modern(h.stem).capitalize() if (h and h.kind == "name") else modern(t.surface)
+            elif is_hon:
+                form = honorific_form(h.stem if h else t.surface, t.surface, h.parses if h else [], getattr(h, "family_set", ""))
+                t.gloss = _conventional(t.gloss, modern(form))
+            elif h is not None:
                 if h.stem in glossary:
                     t.gloss = _conventional(t.gloss, glossary[h.stem])
                 elif h.kind == "name":
@@ -676,21 +763,25 @@ class Interlinear:
                 elif h.kind == "honorific":
                     t.gloss = _conventional(t.gloss, modern(honorific_form(h.stem, t.surface, h.parses, h.family_set)))
                 if not t.gloss:
-                    t.gloss = "(end quote)" if t.chosen and t.chosen.lemma == "iti" else re.sub(r"\s*'\s*'\s*$", "", (h.meaning or h.meaning_2 or "?").split(";")[0]).strip()
+                    t.gloss = "(end quote)" if t.chosen and t.chosen.lemma == "iti" else (_clean_dict_gloss(h.meaning or h.meaning_2 or "?") or "?")
             elif not t.gloss:
                 t.gloss = "?"
+        translation = _clean_quotes(translation)
         if not translation:
             translation = " ".join(t.gloss for t in unit.tokens if not t.punct)
-        fixed, _ = lint(unit.analyses, translation, glossary, alternatives=self.s.glossary_alternatives)
+        fixed, _ = lint(unit.analyses, translation, glossary, alternatives=self.s.glossary_alternatives,
+                        gloss_honorifics=False, glossed=self._glossed)
+        fixed = format_mantra(unit.text, fixed)
         fixed = self._gloss_once(fixed)
         unit.translation = modern(fixed) if re.search(r"[ṃ]", fixed) else fixed
 
     def _gloss_once(self, text: str) -> str:
-        """A technical term is written `word` (gloss) on its first use in the document and as the plain gloss after."""
+        """A technical term or honorific is written `word` (gloss) on its first use in the document and as the plain word after (Sanskrit) or plain gloss after (Pāli)."""
         def once(m: re.Match) -> str:
-            key = re.sub(r"[ṃṁoāaeīiū]+$", "", m.group(1).lower())
-            if key in self._glossed:
-                return m.group(2)
+            key = re.sub(r"[ṃṁoāaeīiūs]+$", "", m.group(1).lower())
+            if key in self._seen_spans:
+                return m.group(1) if LANGUAGE.get("code") == "sa" else m.group(2)
+            self._seen_spans.add(key)
             self._glossed.add(key)
             return m.group(0)
         return re.sub(r"`([^`]+)` \(([^()]*)\)", once, text)
@@ -700,25 +791,40 @@ class Interlinear:
         key = self._key(unit.text, unit.tokens)
         if key in self.cache:
             c = self.cache[key]
-            unit.from_cache = True
-            self._apply(unit, {int(k): v for k, v in c.get("choice", {}).items()}, {int(k): v for k, v in c.get("gloss", {}).items()}, c.get("translation", ""))
-            return
+            tr_cached = c.get("translation", "")
+            if tr_cached and c.get("gloss") and not tr_cached.rstrip().endswith("\\\\"):
+                unit.from_cache = True
+                self._apply(unit, {int(k): v for k, v in c.get("choice", {}).items()}, {int(k): v for k, v in c.get("gloss", {}).items()}, tr_cached)
+                return
         model = self.models.get(self.role)
-        messages = [{"role": "system", "content": system_prompt()},
-                    {"role": "user", "content": prompt_for(modern(unit.text), unit.tokens, self.s.glossary_map, context)}]
+        user_prompt = prompt_for(modern(unit.text), unit.tokens, self.s.glossary_map, context)
+        no_word_prompt = user_prompt.replace(
+            'repeating the word, in this form: {"words": [{"n": 1, "word": "evaṁ", "parse": 1, "gloss": "thus"}, {"n": 2, "word": "me", "parse": 3, "gloss": "by me"}], "translation": "…"}',
+            'in this form: {"words": [{"n": 1, "parse": 1, "gloss": "thus"}, {"n": 2, "parse": 3, "gloss": "by me"}], "translation": "…"}',
+        )
         choice: dict[int, int] = {}
         gloss: dict[int, str] = {}
         translation = ""
-        for temp in (self.s.temperature, 0.3):
+        first_prompt = no_word_prompt if LANGUAGE.get("code") == "sa" else user_prompt
+        for temp, use_thinking, max_tok, up in (
+            (self.s.temperature, self.s.thinking, self.s.max_tokens, first_prompt),
+            (0.2, False, self.s.max_tokens, no_word_prompt),
+            (0.2, True, max(self.s.max_tokens, 4096), no_word_prompt),
+        ):
             self.calls += 1
-            reply = model.chat(messages, max_tokens=self.s.max_tokens, temperature=temp, thinking=self.s.thinking)
+            messages = [{"role": "system", "content": system_prompt()}, {"role": "user", "content": up}]
+            reply = model.chat(messages, max_tokens=max_tok, temperature=temp, thinking=use_thinking)
             unit.raw = reply.text
             choice, gloss, translation = parse_answer(reply.text, unit.tokens)
-            if gloss or translation:
+            if gloss and translation:
                 break
         self._apply(unit, choice, gloss, translation)
-        self.cache[key] = {"choice": {str(k): v for k, v in choice.items()}, "gloss": {str(k): v for k, v in gloss.items()},
-                           "translation": translation, "source": unit.text}
+        if gloss and translation:
+            self.cache[key] = {"choice": {str(k): v for k, v in choice.items()}, "gloss": {str(k): v for k, v in gloss.items()},
+                               "translation": translation, "source": unit.text}
+            self.save_cache()
+        if self.calls % getattr(self.s, "metal_cache_interval", 10) == 0:
+            clear_metal_cache()
 
     # -- the document -----------------------------------------------------------------------
 
@@ -746,11 +852,12 @@ class Interlinear:
     def translate_markdown(self, text: str, segments: list[tuple[str, str]] | None = None) -> "InterlinearResult":
         t0 = time.time()
         blocks = parse_markdown(text)
+        en_blocks = parse_markdown(text)
         units_all: list[Unit] = []
         seg_pos = 0
         para_no = 0
         recent: list[tuple[str, str]] = []
-        for b in blocks:
+        for b, b_en in zip(blocks, en_blocks):
             if b.kind != "para" or not b.translatable or not is_pali(self.dpd, b.text):
                 continue
             para_no += 1
@@ -770,9 +877,19 @@ class Interlinear:
                 out.append(units[-1].translation)
             b.kind = "verbatim"
             b.lines = out
+
+            if verse and units:
+                b_en.kind = "verbatim"
+                b_en.lines = [b_en.prefix + f"{u.translation}  " for u in units[:-1]] + [b_en.prefix + units[-1].translation]
+            elif units:
+                b_en.kind = "para"
+                b_en.translation = " ".join(u.translation for u in units)
+
         self.save_cache()
+        if self.calls % getattr(self.s, "metal_cache_interval", 10) == 0:
+            clear_metal_cache()
         from .segment import render
-        return InterlinearResult(render(blocks), units_all, time.time() - t0, self.calls)
+        return InterlinearResult(render(blocks), units_all, time.time() - t0, self.calls, en_markdown=render(en_blocks))
 
 
 @dataclass
@@ -781,6 +898,7 @@ class InterlinearResult:
     units: list[Unit]
     seconds: float
     model_calls: int
+    en_markdown: str = ""
 
     def report(self) -> str:
         lines = []

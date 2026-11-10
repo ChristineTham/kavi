@@ -227,7 +227,9 @@ class Cologne:
         # "su-bhūti m. N. of a Brāhman"; "a-nātha—piṇḍa-da …, m. ‘giver of food to the poor’, N. of a merchant": the name
         # is the entry's first sense (before its first semicolon); "dharma m. …; N. of …" is a word with a name sense
         return (bool(re.match(r"[A-ZĀĪŪṚṢŚ]", b)) or bool(re.match(r"^\S+ (?:\(\S*\) )?(?:\d\. )?(?:m\. |f\. |n\. )?N\. of", b))
-                or bool(re.match(r"^[^;]{0,120}?\bN\. of", b)))
+                or bool(re.match(r"^[^;]{0,120}?\bN\. of", b))
+                or bool(re.match(r"^of (?:a |an |the )?[A-ZĀĪŪṚṢŚ]", b))
+                or bool(re.search(r"\bn\. of a (?:well-known )?Bodhisattva\b", b)))
 
     def is_name(self, iast: str) -> bool:
         """The dictionaries know the headword only as a proper name (Subhūti, Anāthapiṇḍada)."""

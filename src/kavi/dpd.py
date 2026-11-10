@@ -158,7 +158,7 @@ class Analysis:
         if not self.headwords:
             return None
         first = self.headwords[0]
-        if first.kind or (glossary and first.stem in glossary):
+        if first.kind or first.pos in VERB_POS or (glossary and first.stem in glossary):
             return first
         for h in self.headwords[1:3]:
             if h.kind == "honorific" or (h.kind == "name" and self.capitalised):
@@ -182,11 +182,17 @@ class Analysis:
 
 
 class DPD:
-    def __init__(self, db_path: Path, decon_db: Path | None = None, decon_json: Path | None = None):
+    def __init__(self, db_path: Path, decon_db: Path | None = None, decon_json: Path | None = None, cache_kb: int = 65536):
         db_path = Path(db_path)
         if not db_path.exists():
             raise FileNotFoundError(f"dpd.db not found at {db_path}")
         self.con = sqlite3.connect(f"file:{db_path}?immutable=1", uri=True)
+        try:
+            self.con.execute(f"PRAGMA cache_size = -{cache_kb}")
+            self.con.execute("PRAGMA mmap_size = 2147483648")
+            self.con.execute("PRAGMA temp_store = MEMORY")
+        except sqlite3.Error:
+            pass
         self.con.row_factory = sqlite3.Row
         self.decon = self._open_decon(decon_db, decon_json)
         self._hw: dict[int, sqlite3.Row | None] = {}

@@ -138,3 +138,10 @@ def test_document_with_a_fake_model(dpd, tmp_path):
     assert out.rstrip().endswith("When indeed phenomena appear,  \nto the ardent, meditating brahmin.")
     assert ">" not in out.split("## Paṭhamabodhisutta")[1]                                # the blockquotes are replaced
     assert len(model.calls) == 4
+
+    # The deterministic normal English markdown
+    en = res.en_markdown
+    assert en.startswith("---\ntitle: x\n---")
+    assert "## Paṭhamabodhisutta" in en
+    assert ">Thus it was heard by me— At one time the Bhagavā dwells at Uruvelā." in en
+    assert ">When indeed phenomena appear,  \n>to the ardent, meditating brahmin." in en

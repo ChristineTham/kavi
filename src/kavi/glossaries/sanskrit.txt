@@ -24,6 +24,7 @@ duḥkhaskandha: mass of suffering
 nirodha: cessation
 samudaya: origin | arising
 nirvāṇa: extinguishment
+niṣṭhanirvāṇa: ultimate extinguishment (of suffering) | ultimate extinguishment
 dharma:    # principle, characteristic, phenomenon, teaching by context
 karman: action
 skandha: collection | aggregate, heap
@@ -54,8 +55,9 @@ karuṇā: compassion | sympathy, kindness, pity
 muditā: happiness for others | appreciation, sympathetic joy, gladness
 upekṣā: equanimity | mental balance, mental poise, non-reactivity
 srotāpanna: stream-enterer | stream-winner
-arhat: liberated one | perfected one, awakened being, worthy one, saint
-tathāgata: thus-gone one | thus-come one
+arhat:    # epithet left in Sanskrit (the author)
+tathāgata:    # epithet left in Sanskrit (the author)
+sarvajña: All Knowing | omniscient, the omniscient one, omniscient being
 citta: mind
 caitta: mental factor
 saṃjñā: apperception | perception, recognition, notion, idea
@@ -95,9 +97,22 @@ pudgala: person | individual
 jīva: life-force | soul, living being
 lakṣaṇa: characteristic | mark, sign
 lakṣaṇasaṃpad: physical characteristics | possession of marks
-nimitta: sign | mark, object
+nimitta: sign | mark, object, omen
+śubhanimitta: auspicious sign | auspicious omen, good sign, good omen, favorable omen
 puṇya: merit
 puṇyaskandha: mass of merit | heap of merit
+puṇyābhisaṃskāra: meritorious mental construction | meritorious formation, meritorious action
+abhisaṃskāra: mental construction | volitional formation, formation
+kuśalamūla: root of merit | roots of merit
+kalyāṇamitra: spiritual friend | virtuous friend, spiritual guide
+dharmabhāṇaka: dharma preacher | preacher of the doctrine, dharma-preacher, preacher of dharma
+saddharma: true dharma | true teaching, true doctrine, good dharma
+cakravartin: universal monarch | wheel-turning king, emperor
+gāthā: verse | verses, stanza, stanzas
+karmaskandha: mass of actions | collection of actions, heap of karma
+piṇḍapāta: alms-food | alms food, food given as alms
+ātmabhāva: bodily form | individual existence, person
+deyadharma: religious gift | gift, offering
 dharmaparyāya: method of teaching | discourse on the Dharma, dharma discourse
 lokadhātu: world system | world
 kṣetra: field

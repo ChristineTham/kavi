@@ -10,10 +10,69 @@ HOME = Path.home()
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODELS_DIR = Path(os.environ.get("KAVI_MODELS_DIR", HOME / ".cache" / "mlx-models"))
 
+DEFAULT_MODEL_BASE = "mlx-community/Qwen3.8-27B"
 TRANSLATE_HF = "buddhist-nlp/mitra-qwen35-translate"
 IT_HF = "buddhist-nlp/mitra-qwen35-it"
 TRANSLATE_MLX = "mitra-qwen35-translate-mlx-bf16"
 IT_MLX = "mitra-qwen35-it-mlx-bf16"
+
+
+def system_ram_gb() -> int:
+    """Detect total system unified memory in gigabytes (e.g. 32, 64, 128)."""
+    try:
+        import subprocess
+        out = subprocess.check_output(["sysctl", "-n", "hw.memsize"]).decode().strip()
+        return int(out) // (1024 ** 3)
+    except Exception:
+        pass
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") // (1024 ** 3)
+    except Exception:
+        return 64
+
+
+def default_model() -> str:
+    """Return default MLX model identifier based on system unified memory.
+    Always use unquantised (bf16) on >= 100 GB RAM (128GB tier), 8-bit on >= 50 GB (64GB tier),
+    and 4-bit on < 50 GB (32GB tier).
+    """
+    env = os.environ.get("KAVI_MODEL")
+    if env:
+        return env
+    ram = system_ram_gb()
+    if ram >= 100:
+        return f"{DEFAULT_MODEL_BASE}-bf16"
+    elif ram >= 50:
+        return f"{DEFAULT_MODEL_BASE}-8bit"
+    return f"{DEFAULT_MODEL_BASE}-4bit"
+
+
+def memory_tier() -> str:
+    """Return '32GB', '64GB', or '128GB' based on system RAM."""
+    ram = system_ram_gb()
+    if ram <= 40:
+        return "32GB"
+    elif ram <= 80:
+        return "64GB"
+    return "128GB"
+
+
+def _default_release_translator() -> bool:
+    """On machines with >= 90 GB RAM (128GB tier), keep both models resident for 0s turnaround."""
+    env = os.environ.get("KAVI_RELEASE_TRANSLATOR")
+    if env is not None:
+        return env.lower() not in ("0", "false", "no")
+    return system_ram_gb() < 90
+
+
+def _default_sqlite_cache_kb() -> int:
+    """Tune SQLite cache size by memory tier: 32MB for 32GB, 64MB for 64GB, 256MB for 128GB."""
+    tier = memory_tier()
+    if tier == "32GB":
+        return 32768
+    elif tier == "64GB":
+        return 65536
+    return 262144
 
 
 def _data_dir() -> Path:
@@ -29,19 +88,28 @@ def _data_dir() -> Path:
 @dataclass
 class Settings:
     data_dir: Path = field(default_factory=_data_dir)
-    translate_model: str = os.environ.get("KAVI_TRANSLATE_MODEL", str(MODELS_DIR / TRANSLATE_MLX))
-    eval_model: str = os.environ.get("KAVI_EVAL_MODEL", str(MODELS_DIR / IT_MLX))
+    model: str = field(default_factory=default_model)
+    translate_model: str = ""
+    eval_model: str = ""
     max_rounds: int = 5            # review/revise rounds per batch (0 = translate only)
     max_tokens: int = 2048         # generation cap per model call
     sentence_words: int = 60       # a paragraph longer than this is translated sentence by sentence
     eval_batch_words: int = 400    # paragraphs are reviewed together up to this many Pāḷi words
     thinking: bool = False         # let the instruction-tuned model think before it answers
-    release_translator: bool = True  # free the translate model before the review phase (two large models rarely fit)
+    release_translator: bool = field(default_factory=_default_release_translator)  # True on <=64GB, False on 128GB
+    sqlite_cache_kb: int = field(default_factory=_default_sqlite_cache_kb)
+    metal_cache_interval: int = 10 # clear Metal cache every N segments during generation
     context_segments: int = 2      # preceding segments shown to the translate model, for consistent formulas
     temperature: float = 0.0
     cache_dir: Path = HOME / ".cache" / "kavi"
     lang: str = "pi"               # "pi" Pāli (the Digital Pāḷi Dictionary) or "sa" Sanskrit (vidyut and the Cologne dictionaries)
     glossary: Path | None = Path(__file__).with_name("glossaries") / "default.txt"   # "term: gloss" lines; None disables
+
+    def __post_init__(self) -> None:
+        if not self.translate_model:
+            self.translate_model = os.environ.get("KAVI_TRANSLATE_MODEL", self.model)
+        if not self.eval_model:
+            self.eval_model = os.environ.get("KAVI_EVAL_MODEL", self.model)
 
     def use_language(self, lang: str) -> None:
         """Switch the language; the default glossary follows it unless one was given."""
@@ -101,22 +169,26 @@ class Settings:
     def decon_json(self) -> Path:
         return self.data_dir / "deconstructor_output.json"
 
-    def check(self) -> list[str]:
+    def check(self, all_languages: bool = False) -> list[str]:
         """Human-readable list of what is missing."""
         problems = []
-        if self.lang == "sa":
+        langs = ["pi", "sa"] if all_languages else [self.lang]
+        if "sa" in langs:
             if not (self.vidyut_dir / "kosha").exists():
                 problems.append(f"vidyut data not found at {self.vidyut_dir} — run `kavi setup --sanskrit`")
             if not self.sanskrit_db.exists():
                 problems.append(f"sanskrit.sqlite not found at {self.sanskrit_db} — run `kavi setup --sanskrit`")
-        elif not self.dpd_db.exists():
-            problems.append(f"dpd.db not found at {self.dpd_db} — download the DPD SQLite release "
-                            "(https://github.com/digitalpalidictionary/dpd-db/releases) into the data folder "
-                            "or set KAVI_DPD_DB")
-        if self.lang != "sa" and not self.decon_db.exists() and not self.decon_json.exists():
-            problems.append(f"deconstructor_output.json not found in {self.data_dir} (optional: sandhi splitting "
-                            "then relies on the lookup table and Kaccāyana heuristics alone)")
-        for label, path in (("translate model", self.translate_model), ("review model", self.eval_model)):
-            if "/" in path and not Path(path).expanduser().exists() and not path.startswith("buddhist-nlp/"):
+        if "pi" in langs:
+            if not self.dpd_db.exists():
+                problems.append(f"dpd.db not found at {self.dpd_db} — download the DPD SQLite release "
+                                "(https://github.com/digitalpalidictionary/dpd-db/releases) into the data folder "
+                                "or set KAVI_DPD_DB (or run `kavi setup --dpd`)")
+            if not self.decon_db.exists() and not self.decon_json.exists():
+                problems.append(f"deconstructor_output.json not found in {self.data_dir} (optional: sandhi splitting "
+                                "then relies on the lookup table and Kaccāyana heuristics alone)")
+        for label, path in (("model", self.model), ("translate model", self.translate_model), ("review model", self.eval_model)):
+            if not path:
+                continue
+            if "/" in path and not Path(path).expanduser().exists() and not (path.startswith("buddhist-nlp/") or path.startswith("mlx-community/")):
                 problems.append(f"{label} not found at {path} — run `kavi setup`")
         return problems

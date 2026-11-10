@@ -96,3 +96,57 @@ def test_no_edit_inside_term_span_and_alternatives(dpd):
     assert "(dependent origination)" in fixed and "`samudayo`" not in fixed.split("?")[0]
     assert "mental fabrications" not in fixed and "mental constructions" in fixed
     assert "name-and-form" not in fixed and "phenomenal objects" in fixed
+
+
+def test_glossary_alternative_substring_of_gloss():
+    from kavi.dpd import Headword, Analysis
+    h = Headword(1, "niṣṭhanirvāṇa", "niṣṭhanirvāṇa", "nt", "", "ultimate extinguishment", "", "", "", "", "", "", "")
+    an = [Analysis(surface="niṣṭhanirvāṇaḥ", key="niṣṭhanirvāṇa", headwords=[h])]
+    glossary = {"niṣṭhanirvāṇa": "ultimate extinguishment (of suffering)"}
+    alts = {"niṣṭhanirvāṇa": ["ultimate extinguishment"]}
+    draft = "He has reached the ultimate extinguishment."
+    fixed, _ = lint(an, draft, glossary, alternatives=alts)
+    assert "ultimate extinguishment (of suffering)" in fixed
+    assert "(of suffering) (of suffering)" not in fixed
+
+
+def test_sanskrit_honorifics_and_technical_terms():
+    from kavi.dpd import Headword, Analysis
+    from kavi.language import LANGUAGE
+    from kavi.interlinear import format_mantra
+
+    orig_code = LANGUAGE["code"]
+    try:
+        LANGUAGE["code"] = "sa"
+        # 1. Vocative honorific: first encounter gets (meaning), subsequent encounter gets untranslated vocative form
+        h_voc = Headword(1, "bhagavat", "bhagavat", "masc", "", "Blessed One", "", "", "", "", "", "", "", parses=["voc sg"])
+        an_voc = [Analysis(surface="bhagavan", key="bhagavan", headwords=[h_voc])]
+        glossed = set()
+        fixed1, _ = lint(an_voc, "Tell me, O Blessed One.", {}, gloss_honorifics=True, glossed=glossed)
+        assert "`Bhagavan` (the Blessed One)" in fixed1
+        assert "O " not in fixed1
+
+        fixed2, _ = lint(an_voc, "Thus said the Blessed One.", {}, gloss_honorifics=True, glossed=glossed)
+        assert "Bhagavan" in fixed2
+        assert "(the Blessed One)" not in fixed2
+
+        # 2. Sanskrit technical term: first encounter gets `term` (gloss), subsequent encounter gets bare term
+        h_term = Headword(2, "pratītyasamutpāda", "pratītyasamutpāda", "masc", "", "dependent origination", "", "", "", "", "", "", "", parses=["nom sg"])
+        an_term = [Analysis(surface="pratītyasamutpādaḥ", key="pratītyasamutpāda", headwords=[h_term])]
+        sa_glossary = {"pratītyasamutpāda": "dependent origination"}
+        term_glossed = set()
+        t1, _ = lint(an_term, "He taught dependent origination.", sa_glossary, glossed=term_glossed)
+        assert "`pratītyasamutpāda` (dependent origination)" in t1
+
+        t2, _ = lint(an_term, "Seeing dependent origination, one sees the Dhamma.", sa_glossary, glossed=term_glossed)
+        assert "pratītyasamutpāda" in t2
+        assert "dependent origination" not in t2
+
+        # 3. Mantra formatting
+        m_src = "tadyathā: gate gate pāragate pārasaṃgate bodhi svāhā||"
+        m_tr = "as follows: gone, gone, gone beyond, completely gone beyond, awakening, hail."
+        res = format_mantra(m_src, m_tr)
+        assert res.startswith("as follows: gate gate pāragate pārasaṃgate bodhi svāhā (gone, gone, gone beyond")
+    finally:
+        LANGUAGE["code"] = orig_code
+

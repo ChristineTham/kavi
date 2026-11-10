@@ -62,3 +62,24 @@ def test_offline_loop(dpd, tmp_path):
     assert unit.rounds and unit.rounds[0].issues                                     # the reviewer's issue was recorded
     assert len(review.calls) >= 1 and "Problems already found" not in review.calls[0][-1]["content"] or True
     assert "Then indeed" in out                                                      # the revision was applied
+
+
+def test_agentic_loop_with_instruction_model(dpd, tmp_path):
+    text = "95. Ekaṃ samayaṃ bhagavā kurūsu viharati. Atha kho āyasmā ānando bhagavantaṃ etadavoca.\n"
+    translate = FakeModel("Qwen3.8-27B-bf16", [
+        ("Translate this", "At one time the Bhagavā was dwelling among the Kurus. Then Ānanda said this to the Bhagavā."),
+        ("Revise the translation", "At one time the Bhagavā was dwelling among the Kurus. Then indeed the āyasmā Ānanda said this to the Bhagavā."),
+    ])
+    review = FakeModel("Qwen3.8-27B-bf16", [
+        ("Segments to check", "ISSUES:\n- Segment [1]: 'kho' ('indeed') and 'āyasmā' were omitted\n\nREVISED:\n[1] At one time the Bhagavā was dwelling among the Kurus. Then indeed the āyasmā Ānanda said this to the Bhagavā.\nEND"),
+    ])
+    st = Settings()
+    st.max_rounds = 2
+    st.cache_dir = tmp_path
+    tr = Translator(st, dpd, FakePool(translate, review), progress=lambda m: None, use_cache=False)
+    result = tr.translate_markdown(text)
+    out = result.markdown
+    assert "Then indeed" in out
+    assert "āyasmā" in out
+    # Verify that the translator model was invoked for revision via the harness
+    assert any("Revise the translation" in c[-1]["content"] for c in translate.calls)

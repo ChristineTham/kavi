@@ -75,11 +75,14 @@ CAPITALISED_HONORIFICS = {"bhagavā", "bhagavant", "bhagavantu", "satthā", "sat
                           "bhagavat", "bhagavān", "śāstṛ", "samyaksaṃbuddha", "samyaksambuddha", "bhadanta"}
 
 
-def honorific_form(stem: str, surface: str, parses: list[str], family_set: str = "") -> str:
+def honorific_form(stem: str, surface: str, parses: list[str] | str, family_set: str = "") -> str:
     """How an honorific is written in the English: as it stands when nominative or vocative, otherwise in its
     citation form (the stem), capitalised for the epithets of the Buddha and the forms of address."""
     form = surface
-    if stem.startswith("bhagavant") or stem == "bhagavā":
+    p_list = [parses] if isinstance(parses, str) else (parses or [])
+    if any("voc" in p for p in p_list):
+        form = surface                                          # Vocatives stay in their vocative form as they stand
+    elif stem.startswith("bhagavant") or stem == "bhagavā":
         form = "bhagavā"
     elif stem in ("bhagavat", "bhagavān"):
         form = "bhagavān"                                       # Sanskrit: the nominative is the citation form

@@ -26,6 +26,11 @@ def _settings(args) -> Settings:
     s = Settings()
     if getattr(args, "data_dir", None):
         s.data_dir = Path(args.data_dir).expanduser()
+    if getattr(args, "model", None):
+        s.translate_model = args.model
+        s.eval_model = args.model
+        if hasattr(args, "interlinear_model") and not getattr(args, "interlinear_model", None):
+            args.interlinear_model = args.model
     if getattr(args, "translate_model", None):
         s.translate_model = args.translate_model
     if getattr(args, "review_model", None):
@@ -42,6 +47,10 @@ def _settings(args) -> Settings:
         s.sentence_words = args.sentence_words
     if getattr(args, "batch_words", None):
         s.eval_batch_words = args.batch_words
+    if getattr(args, "dual_resident", False):
+        s.release_translator = False
+    elif getattr(args, "release_translator", False):
+        s.release_translator = True
     if getattr(args, "lang", None):
         s.use_language(args.lang)
     if getattr(args, "glossary", None):
@@ -55,7 +64,7 @@ def _dpd(s: Settings):
         from .sanskrit import SanskritLexicon
         return SanskritLexicon(s.data_dir)
     from .dpd import DPD
-    return DPD(s.dpd_db, s.decon_db, s.decon_json)
+    return DPD(s.dpd_db, s.decon_db, s.decon_json, cache_kb=s.sqlite_cache_kb)
 
 
 def _read_input(args) -> tuple[str, str | None]:
@@ -97,31 +106,36 @@ def cmd_translate(args) -> int:
     else:
         inputs = [_read_input(args)]
     segments = None
-    if args.interlinear:
-        from .interlinear import Interlinear, load_segments
-        if args.interlinear_model:
-            pool = ModelPool(s.translate_model, args.interlinear_model)
-        inter = Interlinear(s, dpd, pool, use_cache=not args.no_cache)
-        if args.segments:
-            segments = []
-            for raw in args.segments:
-                segments.extend(load_segments(Path(raw)))
+    if getattr(args, "segments", None):
+        from .interlinear import load_segments
+        segments = []
+        for raw in args.segments:
+            segments.extend(load_segments(Path(raw)))
     for text, name in inputs:
         if name:
             sys.stderr.write(f"== {name}\n")
-        if args.interlinear:
-            result = inter.translate_markdown(text, segments)
-        else:
-            result = tr.translate_markdown(text, review=s.max_rounds > 0)
+        result = tr.translate_markdown(text, segments=segments, interlinear=bool(args.interlinear), review=s.max_rounds > 0)
         if args.out:
             out = Path(args.out)
             if out.is_dir() or (len(inputs) > 1):
                 out.mkdir(parents=True, exist_ok=True)
                 out = out / (Path(name).stem + ".en" + Path(name).suffix if name else "translation.md")
+            else:
+                out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(result.markdown, encoding="utf-8")
             sys.stderr.write(f"   -> {out}\n")
         else:
             print(result.markdown)
+        if getattr(args, "en_out", None) and hasattr(result, "en_markdown") and result.en_markdown:
+            en_path = Path(args.en_out)
+            if en_path.is_dir() or (len(inputs) > 1):
+                en_path.mkdir(parents=True, exist_ok=True)
+                en_target = en_path / (Path(name).name if name else "translation.en.md")
+            else:
+                en_path.parent.mkdir(parents=True, exist_ok=True)
+                en_target = en_path
+            en_target.write_text(result.en_markdown, encoding="utf-8")
+            sys.stderr.write(f"   normal en -> {en_target}\n")
         if args.table and hasattr(result, "table"):
             Path(args.table).write_text(result.table(), encoding="utf-8")
             sys.stderr.write(f"   word analysis -> {args.table}\n")
@@ -168,6 +182,92 @@ def _analysis_json(a) -> dict:
     }
 
 
+DPD_RELEASE_URL = "https://github.com/digitalpalidictionary/dpd-db/releases/latest/download/dpd.db.tar.xz"
+DECONSTRUCTOR_URL = "https://raw.githubusercontent.com/digitalpalidictionary/deconstructor_output/main/deconstructor_output.json.tar.gz"
+
+
+def _download_file(url: str, dest: Path) -> None:
+    """Download a file with user-agent and progress output."""
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": "kavi"})
+    with urllib.request.urlopen(req) as resp, open(dest, "wb") as f:
+        total = int(resp.headers.get("Content-Length", 0))
+        done = 0
+        chunk_size = 1024 * 1024
+        while True:
+            chunk = resp.read(chunk_size)
+            if not chunk:
+                break
+            f.write(chunk)
+            done += len(chunk)
+            if total:
+                percent = done * 100 // total
+                print(f"\r  {done // (1024 * 1024)} / {total // (1024 * 1024)} MB ({percent}%)", end="", flush=True)
+            else:
+                print(f"\r  {done // (1024 * 1024)} MB", end="", flush=True)
+        print()
+
+
+def _extract_tar(archive: Path, dest_dir: Path) -> None:
+    import tarfile
+    mode = "r:xz" if archive.name.endswith(".xz") else "r:gz" if archive.name.endswith(".gz") else "r:*"
+    with tarfile.open(archive, mode) as tar:
+        if hasattr(tarfile, "data_filter"):
+            tar.extractall(dest_dir, filter="data")
+        else:
+            tar.extractall(dest_dir)
+
+
+def cmd_setup_dpd(args) -> int:
+    """Download the latest Digital Pāḷi Dictionary (dpd.db) and deconstructor files from GitHub."""
+    s = _settings(args)
+    data = s.data_dir
+    data.mkdir(parents=True, exist_ok=True)
+    force = getattr(args, "force", False)
+
+    db_dest = data / "dpd.db"
+    if db_dest.exists() and not force:
+        print(f"dpd.db present at {db_dest}")
+    else:
+        print(f"downloading latest dpd.db from {DPD_RELEASE_URL} …")
+        archive = data / "dpd.db.tar.xz"
+        try:
+            _download_file(DPD_RELEASE_URL, archive)
+            print(f"extracting {archive.name} …")
+            _extract_tar(archive, data)
+            print(f"dpd.db ready at {db_dest}")
+        finally:
+            if archive.exists() and not getattr(args, "keep_source", False):
+                archive.unlink(missing_ok=True)
+
+    decon_json = data / "deconstructor_output.json"
+    decon_db = data / "deconstructor.sqlite"
+    if (decon_db.exists() or decon_json.exists()) and not force:
+        print(f"deconstructor present at {decon_db if decon_db.exists() else decon_json}")
+    else:
+        print(f"downloading deconstructor from {DECONSTRUCTOR_URL} …")
+        archive = data / "deconstructor_output.json.tar.gz"
+        try:
+            _download_file(DECONSTRUCTOR_URL, archive)
+            print(f"extracting {archive.name} …")
+            _extract_tar(archive, data)
+            print(f"deconstructor ready at {decon_json}")
+        finally:
+            if archive.exists() and not getattr(args, "keep_source", False):
+                archive.unlink(missing_ok=True)
+
+    if decon_json.exists() and (not decon_db.exists() or force):
+        from .dpd import DPD
+        print("indexing deconstructor into SQLite …")
+        con = DPD._open_decon(decon_db, decon_json)
+        if con:
+            con.close()
+        print(f"indexed {decon_db}")
+
+    print("DPD setup complete.")
+    return 0
+
+
 def cmd_setup_sanskrit(args) -> int:
     """Download vidyut's linguistic data (81 MB, MIT) and the Cologne digitisations of Edgerton's Buddhist Hybrid
     Sanskrit Dictionary, Monier-Williams and Apte (CC BY-NC-SA 3.0), and build data/sanskrit.sqlite."""
@@ -177,7 +277,13 @@ def cmd_setup_sanskrit(args) -> int:
     data = s.data_dir
     data.mkdir(parents=True, exist_ok=True)
     vdir = s.vidyut_dir
-    if (vdir / "kosha").exists() and not args.force:
+    force = getattr(args, "force", False)
+
+    if s.sanskrit_db.exists() and (vdir / "kosha").exists() and not force:
+        print(f"Sanskrit data present at {vdir} and {s.sanskrit_db}")
+        return 0
+
+    if (vdir / "kosha").exists() and not force:
         print(f"vidyut data present at {vdir}")
     else:
         import vidyut
@@ -187,7 +293,7 @@ def cmd_setup_sanskrit(args) -> int:
     cdir.mkdir(exist_ok=True)
     for d in cologne.SOURCES:
         dest = cdir / f"{d}.txt"
-        if dest.exists() and not args.force:
+        if dest.exists() and not force:
             print(f"{dest.name} present")
             continue
         url = cologne.RAW.format(d=d)
@@ -199,44 +305,93 @@ def cmd_setup_sanskrit(args) -> int:
     return 0
 
 
-def cmd_setup(args) -> int:
-    """Download both MITRA checkpoints and convert them to MLX (the checkpoints declare model_type
-    qwen3_5_text, which mlx-lm does not know; it is patched to qwen3_5)."""
-    if getattr(args, "sanskrit", False):
-        return cmd_setup_sanskrit(args)
-    from huggingface_hub import snapshot_download
+def cmd_setup_models(args) -> int:
+    """Download the unified model checkpoint (default: Qwen-3.8-27B at hardware memory tier's precision)."""
+    s = _settings(args)
+    if getattr(args, "mitra", False) or getattr(args, "translate_only", False) or getattr(args, "review_only", False):
+        from huggingface_hub import snapshot_download
 
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    jobs = []
-    if not args.review_only:
-        jobs.append((TRANSLATE_HF, MODELS_DIR / "mitra-src", MODELS_DIR / TRANSLATE_MLX))
-    if not args.translate_only:
-        jobs.append((IT_HF, MODELS_DIR / "mitra-it-src", MODELS_DIR / IT_MLX))
-    for repo, src, dest in jobs:
-        if args.bits:
-            dest = dest.with_name(dest.name.replace("bf16", f"{args.bits}bit"))
-        if dest.exists() and not args.force:
-            print(f"{dest} exists, skipping (use --force to rebuild)")
-            continue
-        print(f"downloading {repo} -> {src}")
-        snapshot_download(repo, local_dir=str(src), max_workers=8)
-        cfg = src / "config.json"
-        c = json.loads(cfg.read_text())
-        if c.get("model_type") == "qwen3_5_text":
-            c["model_type"] = "qwen3_5"
-            cfg.write_text(json.dumps(c, indent=2))
-            print("  patched model_type -> qwen3_5")
-        cmd = [sys.executable, "-m", "mlx_lm", "convert", "--hf-path", str(src), "--mlx-path", str(dest)]
-        if args.bits:
-            cmd += ["-q", "--q-bits", str(args.bits), "--q-group-size", "64"]
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        jobs = []
+        if not args.review_only:
+            jobs.append((TRANSLATE_HF, MODELS_DIR / "mitra-src", MODELS_DIR / TRANSLATE_MLX))
+        if not args.translate_only:
+            jobs.append((IT_HF, MODELS_DIR / "mitra-it-src", MODELS_DIR / IT_MLX))
+        for repo, src, dest in jobs:
+            if args.bits:
+                dest = dest.with_name(dest.name.replace("bf16", f"{args.bits}bit"))
+            if dest.exists() and not args.force:
+                print(f"{dest} exists, skipping (use --force to rebuild)")
+                continue
+            print(f"downloading {repo} -> {src}")
+            snapshot_download(repo, local_dir=str(src), max_workers=8)
+            cfg = src / "config.json"
+            c = json.loads(cfg.read_text())
+            if c.get("model_type") == "qwen3_5_text":
+                c["model_type"] = "qwen3_5"
+                cfg.write_text(json.dumps(c, indent=2))
+                print("  patched model_type -> qwen3_5")
+            cmd = [sys.executable, "-m", "mlx_lm", "convert", "--hf-path", str(src), "--mlx-path", str(dest)]
+            if args.bits:
+                cmd += ["-q", "--q-bits", str(args.bits), "--q-group-size", "64"]
+            else:
+                cmd += ["--dtype", "bfloat16"]
+            print("  " + " ".join(cmd))
+            subprocess.run(cmd, check=True)
+            if not args.keep_source:
+                import shutil
+                shutil.rmtree(src, ignore_errors=True)
+            print(f"  -> {dest}")
+        return 0
+
+    model_id = getattr(args, "model", None)
+    if not model_id:
+        bits = getattr(args, "bits", 0)
+        if bits == 4:
+            model_id = "mlx-community/Qwen3.8-27B-4bit"
+        elif bits == 8:
+            model_id = "mlx-community/Qwen3.8-27B-8bit"
         else:
-            cmd += ["--dtype", "bfloat16"]
-        print("  " + " ".join(cmd))
-        subprocess.run(cmd, check=True)
-        if not args.keep_source:
-            import shutil
-            shutil.rmtree(src, ignore_errors=True)
-        print(f"  -> {dest}")
+            model_id = s.model
+
+    print(f"setting up unified model: {model_id} …")
+    from huggingface_hub import snapshot_download
+    snapshot_download(model_id, max_workers=8)
+    print(f"unified model ready: {model_id}")
+    return 0
+
+
+def cmd_setup(args) -> int:
+    """Set up language data and models. By default sets up everything (DPD, Sanskrit, models)."""
+    do_dpd = getattr(args, "dpd", False)
+    do_sa = getattr(args, "sanskrit", False)
+    do_models = (
+        getattr(args, "models", False)
+        or getattr(args, "translate_only", False)
+        or getattr(args, "review_only", False)
+    )
+
+    # If no specific component was selected, or --all was specified, include everything
+    if not (do_dpd or do_sa or do_models) or getattr(args, "all", False):
+        do_dpd = True
+        do_sa = True
+        do_models = True
+
+    if do_dpd:
+        ret = cmd_setup_dpd(args)
+        if ret != 0:
+            return ret
+
+    if do_sa:
+        ret = cmd_setup_sanskrit(args)
+        if ret != 0:
+            return ret
+
+    if do_models:
+        ret = cmd_setup_models(args)
+        if ret != 0:
+            return ret
+
     return 0
 
 
@@ -244,24 +399,89 @@ def cmd_doctor(args) -> int:
     s = _settings(args)
     print(f"kavi {__version__}")
     print(f"data dir        : {s.data_dir}")
-    print(f"language        : {'Sanskrit (vidyut + Cologne dictionaries)' if s.lang == 'sa' else 'Pāli (DPD)'}")
-    if s.lang == "sa":
-        print(f"vidyut data     : {s.vidyut_dir} {'OK' if (s.vidyut_dir / 'kosha').exists() else 'MISSING (kavi setup --sanskrit)'}")
-        print(f"sanskrit.sqlite : {s.sanskrit_db} {'OK' if s.sanskrit_db.exists() else 'MISSING (kavi setup --sanskrit)'}")
+
+    langs = [args.lang] if getattr(args, "lang", None) else ["pi", "sa"]
+    problems = []
+
+    if "pi" in langs:
+        print("\nPāli (DPD):")
+        dpd_ok = s.dpd_db.exists()
+        decon_ok = s.decon_db.exists() or s.decon_json.exists()
+        print(f"  dpd.db          : {s.dpd_db} {'OK' if dpd_ok else 'MISSING (kavi setup --dpd)'}")
+        print(f"  deconstructor   : {s.decon_db if s.decon_db.exists() else s.decon_json} "
+              f"{'OK' if decon_ok else 'MISSING (kavi setup --dpd)'}")
+        if not dpd_ok:
+            problems.append(f"dpd.db not found at {s.dpd_db} — run `kavi setup --dpd`")
+        if not decon_ok:
+            problems.append(f"deconstructor not found in {s.data_dir} — run `kavi setup --dpd`")
+        if dpd_ok:
+            try:
+                from .dpd import DPD
+                dpd = DPD(s.dpd_db, s.decon_db, s.decon_json)
+                print(f"  lexicon         : {dpd.version}")
+                sample = "bhikkhave"
+                a = dpd.analyse(sample)
+                lemma = a.headwords[0].lemma if a.headwords else "?"
+                analysis = a.headwords[0].analysis if a.headwords else ""
+                print(f"  sample lookup   : {sample} -> {lemma}: {analysis}")
+            except Exception as e:
+                problems.append(f"dpd lookup error: {e}")
+
+    if "sa" in langs:
+        print("\nSanskrit (vidyut + Cologne dictionaries):")
+        vidyut_ok = (s.vidyut_dir / "kosha").exists()
+        sa_ok = s.sanskrit_db.exists()
+        print(f"  vidyut data     : {s.vidyut_dir} {'OK' if vidyut_ok else 'MISSING (kavi setup --sanskrit)'}")
+        print(f"  sanskrit.sqlite : {s.sanskrit_db} {'OK' if sa_ok else 'MISSING (kavi setup --sanskrit)'}")
+        if not vidyut_ok:
+            problems.append(f"vidyut data not found at {s.vidyut_dir} — run `kavi setup --sanskrit`")
+        if not sa_ok:
+            problems.append(f"sanskrit.sqlite not found at {s.sanskrit_db} — run `kavi setup --sanskrit`")
+        if vidyut_ok and sa_ok:
+            try:
+                from .sanskrit import SanskritLexicon
+                sa_lex = SanskritLexicon(s.data_dir)
+                sample = "bodhisattvaḥ"
+                a = sa_lex.analyse(sample)
+                lemma = a.headwords[0].lemma if a.headwords else "?"
+                analysis = a.headwords[0].analysis if a.headwords else ""
+                print(f"  sample lookup   : {sample} -> {lemma}: {analysis}")
+            except Exception as e:
+                problems.append(f"sanskrit lookup error: {e}")
+
+    print("\nModels:")
+    if s.translate_model == s.eval_model:
+        path = s.model
+        ok = Path(path).expanduser().exists() or path.startswith("buddhist-nlp/") or path.startswith("mlx-community/")
+        print(f"  unified model   : {path} {'OK' if ok else 'MISSING (kavi setup)'}")
+        if not ok:
+            problems.append(f"unified model not found at {path} — run `kavi setup`")
     else:
-        print(f"dpd.db          : {s.dpd_db} {'OK' if s.dpd_db.exists() else 'MISSING'}")
-        print(f"deconstructor   : {s.decon_db if s.decon_db.exists() else s.decon_json} "
-              f"{'OK' if s.decon_db.exists() or s.decon_json.exists() else 'MISSING (optional)'}")
-    for label, path in (("translate model", s.translate_model), ("review model", s.eval_model)):
-        print(f"{label:16}: {path} {'OK' if Path(path).expanduser().exists() else 'MISSING (kavi setup)'}")
-    sample = "bodhisattvaḥ" if s.lang == "sa" else "bhikkhave"
-    if (s.lang == "sa" and (s.vidyut_dir / "kosha").exists()) or (s.lang != "sa" and s.dpd_db.exists()):
-        dpd = _dpd(s)
-        print(f"lexicon         : {dpd.version}")
-        a = dpd.analyse(sample)
-        print(f"sample lookup   : {sample} -> {a.headwords[0].lemma if a.headwords else '?'}: {a.headwords[0].analysis if a.headwords else ''}")
-    problems = s.check()
-    print("\n".join("! " + p for p in problems) if problems else "all good")
+        for label, path in (("translate model", s.translate_model), ("review model", s.eval_model)):
+            ok = Path(path).expanduser().exists() or path.startswith("buddhist-nlp/") or path.startswith("mlx-community/")
+            print(f"  {label:16}: {path} {'OK' if ok else 'MISSING (kavi setup)'}")
+            if not ok:
+                problems.append(f"{label} not found at {path} — run `kavi setup`")
+
+    from .config import system_ram_gb, memory_tier
+    ram_gb = system_ram_gb()
+    tier = memory_tier()
+    print(f"\nHardware & Memory:")
+    print(f"  system RAM      : {ram_gb} GB unified memory (Tier: {tier})")
+    print(f"  model residency : {'dual resident (0s reload)' if not s.release_translator else 'sequential release (peak ~18GB)'}")
+    print(f"  sqlite cache    : {s.sqlite_cache_kb // 1024} MB")
+    if tier == "32GB":
+        print("  recommendation  : 32GB tier — consider 8-bit or 4-bit quantisation (`kavi setup --bits 8`)")
+    elif tier == "64GB":
+        print("  recommendation  : 64GB tier — bf16 single/sequential model runs comfortably; 8-bit for instant dual residency")
+    else:
+        print("  recommendation  : 128GB tier — dual bf16 residency enabled (zero reload latency)")
+
+    print()
+    if problems:
+        print("\n".join("! " + p for p in problems))
+    else:
+        print("all good")
     return 1 if problems else 0
 
 
@@ -307,14 +527,19 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--no-review", action="store_true", help="translate only, skip the review model")
     t.add_argument("--think", action="store_true", help="let the review model think before answering (slower)")
     t.add_argument("--no-cache", action="store_true", help="ignore and do not write the translation cache")
+    t.add_argument("--model", help="single model to use for all roles (sets translate, review, and interlinear models)")
     t.add_argument("--translate-model", help="MLX path of the translation model")
     t.add_argument("--review-model", help="MLX path of the review model")
     t.add_argument("--max-tokens", type=int)
     t.add_argument("--sentence-words", type=int, help="translate paragraphs longer than this sentence by sentence")
     t.add_argument("--batch-words", type=int, help="review batches up to this many Pāli words")
+    t.add_argument("--dual-resident", action="store_true", help="keep both translate and review models resident in memory (for >= 128GB Macs)")
+    t.add_argument("--release-translator", action="store_true", help="free the translator model before review phase (recommended on <= 64GB Macs)")
     t.add_argument("--glossary", help="file of 'term: gloss' lines to keep in Pāli with a gloss (default: the built-in doctrinal glossary; 'none' to disable)")
     t.add_argument("--interlinear", action="store_true",
                    help="interlinear output: for each sentence the Pāḷi, the analysis in the textbook's symbols, the glosses and the translation")
+    t.add_argument("--en", "--en-out", dest="en_out",
+                   help="also write the normal English translation (reconstructed from the interlinear) to this file or directory")
     t.add_argument("--segments", nargs="*", help="SuttaCentral segment JSON file(s): the sentences and their numbers follow them")
     t.add_argument("--interlinear-model", help="MLX path of the model that chooses the parses and glosses (default: the review model)")
     t.set_defaults(func=cmd_translate)
@@ -328,13 +553,19 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--full", action="store_true", help="more homonyms per word")
     a.set_defaults(func=cmd_analyse)
 
-    st = sub.add_parser("setup", help="download and convert the MITRA models to MLX")
+    st = sub.add_parser("setup", help="download language data and set up models (all by default)")
+    common(st)
+    st.add_argument("--model", help="unified model to download/setup (default: Qwen-3.8-27B according to memory tier)")
+    st.add_argument("--mitra", action="store_true", help="set up legacy MITRA models")
     st.add_argument("--bits", type=int, default=0, choices=[4, 8, 0], help="quantisation: 0 = bfloat16 (default), 8 or 4 bits")
     st.add_argument("--translate-only", action="store_true")
     st.add_argument("--review-only", action="store_true")
-    st.add_argument("--keep-source", action="store_true", help="keep the downloaded bf16 checkpoint")
+    st.add_argument("--keep-source", action="store_true", help="keep the downloaded bf16 checkpoint or data archives")
     st.add_argument("--force", action="store_true")
-    st.add_argument("--sanskrit", action="store_true", help="instead of the models: download vidyut's data and the Cologne dictionaries (Edgerton, Monier-Williams, Apte) and build sanskrit.sqlite")
+    st.add_argument("--models", action="store_true", help="set up models only")
+    st.add_argument("--sanskrit", action="store_true", help="set up Sanskrit data only (vidyut and Cologne dictionaries)")
+    st.add_argument("--dpd", "--pali", dest="dpd", action="store_true", help="set up Digital Pāḷi Dictionary data only (dpd.db and deconstructor)")
+    st.add_argument("--all", action="store_true", help="set up everything (default)")
     st.set_defaults(func=cmd_setup)
 
     d = sub.add_parser("doctor", help="check data files and models")

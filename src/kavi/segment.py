@@ -89,6 +89,19 @@ class Block:
         return self.kind in ("heading", "list", "para", "table") and bool(HAS_LETTERS_RE.search(self.text or " ".join(c for r in self.cells for c in r)))
 
 
+def is_table_start(lines: list[str], i: int, quote: str) -> int:
+    """Return j > i if lines[i:j] forms a table (has TABLE_SEP_RE), else 0."""
+    j = i
+    while j < len(lines):
+        q2, r2 = split_quote(lines[j])
+        if q2 != quote or not TABLE_RE.match(r2):
+            break
+        j += 1
+    if j > i and any(TABLE_SEP_RE.match(split_quote(l)[1]) for l in lines[i:j]):
+        return j
+    return 0
+
+
 def split_quote(line: str) -> tuple[str, str]:
     m = QUOTE_RE.match(line)
     return (m.group(1), m.group(2)) if m else ("", line)
@@ -154,15 +167,10 @@ def parse_markdown(text: str) -> list[Block]:
             i += 1
             continue
 
-        if TABLE_RE.match(rest):
-            j = i
+        table_end = is_table_start(lines, i, quote)
+        if table_end:
+            block_lines = lines[i:table_end]
             rows: list[list[str]] = []
-            while j < len(lines):
-                q2, r2 = split_quote(lines[j])
-                if q2 != quote or not TABLE_RE.match(r2):
-                    break
-                j += 1
-            block_lines = lines[i:j]
             for l in block_lines:
                 _, r2 = split_quote(l)
                 if TABLE_SEP_RE.match(r2):
@@ -170,7 +178,7 @@ def parse_markdown(text: str) -> list[Block]:
                 else:
                     rows.append([c.strip() for c in r2.strip().strip("|").split("|")])
             blocks.append(Block("table", block_lines, prefix=quote, cells=rows))
-            i = j
+            i = table_end
             continue
 
         heading = HEADING_RE.match(rest)
@@ -190,7 +198,7 @@ def parse_markdown(text: str) -> list[Block]:
         while j < len(lines):
             q2, r2 = split_quote(lines[j])
             lazy = bool(group) and quote.strip() and q2 == "" and not is_structural(r2)   # a blockquote's lazy continuation line
-            if (q2 != quote and not lazy) or is_structural(r2) or HEADING_RE.match(r2) or LIST_RE.match(r2) or TABLE_RE.match(r2):
+            if (q2 != quote and not lazy) or is_structural(r2) or HEADING_RE.match(r2) or LIST_RE.match(r2) or is_table_start(lines, j, quote):
                 break
             if FENCE_RE.match(r2) or jsx_block_len(lines, j):
                 break

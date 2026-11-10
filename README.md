@@ -37,20 +37,23 @@ For Sanskrit (`--lang sa`, Buddhist Hybrid Sanskrit included) `kavi setup --sans
 derivation engine) into `./data/vidyut/` and the Cologne Digital Sanskrit Dictionaries' text files of Edgerton's
 *Buddhist Hybrid Sanskrit Dictionary* (1953), Monier-Williams (1899) and Apte (1890) from
 https://github.com/sanskrit-lexicon/csl-orig (CC BY-NC-SA 3.0) into `./data/cologne/`, and builds
-`./data/sanskrit.sqlite` from them. Hybrid forms are read by the rules of Edgerton's *Buddhist Hybrid Sanskrit
-Grammar* in `src/kavi/bhs.py`, each with its paragraph number. The design is in `docs/sanskrit-scope.md`.
+`./data/sanskrit.sqlite` from them. Classical morphophonemic and derivational rules from Pāṇini's *Aṣṭādhyāyī*
+(external *ac/hal/visarga* sandhi, internal *ṇatva* and *ṣatva*, *cvi* and *samāsānta* stems, *taddhita* initial
+*vṛddhi*, and `-tṛ` agent nouns) together with Buddhist Sanskrit compound-member frequencies from the Digital
+Corpus of Sanskrit (`ambuda-org/dcs`) live in `src/kavi/panini.py`; hybrid forms are read by the rules of
+Edgerton's *Buddhist Hybrid Sanskrit Grammar* in `src/kavi/bhs.py`, each with its paragraph number. The design
+is in `docs/sanskrit-scope.md`.
 
 ## Install and run
 
 ```bash
-uv sync                                   # Python 3.12, mlx-lm, streamlit
-uv run kavi setup                         # download + convert both MITRA models (bf16)
-uv run kavi doctor                        # check data and models
+uv sync                                   # Python 3.12, mlx-lm, streamlit, vidyut
+uv run kavi setup                         # set up everything (DPD data, Sanskrit dictionaries, MITRA models)
+uv run kavi doctor                        # check data and models across all languages
 uv run kavi translate sutta.md -o sutta.en.md --report review.md --table words.md
 uv run kavi translate --text "Ekaṃ samayaṃ bhagavā bārāṇasiyaṃ viharati."
 uv run kavi analyse "Tatthodantāsarā aṭṭha."   # the DPD word table only
 uv run kavi app                           # Streamlit interface
-uv run kavi setup --sanskrit              # vidyut data + the Cologne dictionaries for Sanskrit
 uv run kavi translate --lang sa --interlinear heart.md    # Sanskrit or Buddhist Hybrid Sanskrit
 ```
 
@@ -75,6 +78,27 @@ https://christham.net/buddhavacana/sutta/deporig/). In short:
 
 The translate model is released from memory before the review phase when the two roles use different models, so a
 27B translator and a 31B reviewer can be combined on a 64 GB machine.
+
+## Hardware & Memory Tiers (32 GB, 64 GB, 128 GB)
+
+Kavi's memory footprint is governed by the two 9B MITRA models in Apple Silicon unified memory:
+* **bf16 (full precision)**: ~17.5 GB per model (~18–19 GB in unified memory). Both models together take ~36–38 GB.
+* **8-bit quantised**: ~9.5 GB per model (~19 GB for both).
+* **4-bit quantised**: ~5.2 GB per model (~10.4 GB for both).
+* **Lexicon & SQLite databases** (`dpd.db`, `sanskrit.sqlite`): ~300–600 MB.
+
+Kavi automatically detects total unified memory via `sysctl hw.memsize` and configures the optimal memory tier:
+
+| Hardware Tier | Recommended Precision | Model Residency | SQLite Cache | Notes |
+| --- | --- | --- | --- | --- |
+| **32 GB** | 8-bit (`kavi setup --bits 8`) | Sequential release (`--release-translator`) | 32 MB | 8-bit keeps total usage under 19 GB with near-lossless perplexity (<0.1 diff); bf16 runs only in interlinear mode or with strict sequential release. |
+| **64 GB** | bf16 (default) | Sequential release for 2-model pipeline; single model for interlinear | 64 MB | Sweet spot for interlinear mode (~18 GB peak), leaving ~40 GB free for macOS and page caches. |
+| **128 GB** | bf16 (default) | Dual resident (`--dual-resident`) | 256 MB | Both bf16 models stay loaded simultaneously, eliminating the 3–5s model reload time between translation and review rounds. |
+
+Run `kavi doctor` at any time to inspect your machine's detected tier, active model residency mode, and SQLite cache allocation:
+```bash
+uv run kavi doctor
+```
 
 ## Measuring and improving
 

@@ -67,6 +67,11 @@ class MLXModel:
             out.append(r.text)
             finish = r.finish_reason
             n += 1
+            if n >= 16 and "".join(out[-16:]).count("\\u0") >= 4:
+                finish = "length"
+                break
+            if len(out) >= 5 and "\nEND" in "".join(out[-5:]):
+                break
         text = "".join(out)
         thought = ""
         m = re.search(r"<think>(.*?)</think>", text, re.S)
@@ -76,6 +81,17 @@ class MLXModel:
         elif "</think>" in text:
             thought, text = text.split("</think>", 1)
         return Reply(text.strip(), finish, n, time.time() - t0, thought.strip())
+
+
+def clear_metal_cache() -> None:
+    """Reclaim freed unified memory buffers from MLX Metal allocator."""
+    try:
+        import mlx.core as mx
+        mx.clear_cache()
+        if hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
+            mx.metal.clear_cache()
+    except Exception:
+        pass
 
 
 class ModelPool:
@@ -104,11 +120,7 @@ class ModelPool:
         import gc
         del m.model, m.tokenizer
         gc.collect()
-        try:
-            import mlx.core as mx
-            mx.clear_cache()
-        except Exception:
-            pass
+        clear_metal_cache()
 
 
 # --------------------------------------------------------------------------------------
@@ -226,6 +238,43 @@ def translate_messages_generic(source: str, analyses: list[Analysis], has_placeh
     return [{"role": "system", "content": GENERIC_SYSTEM}, {"role": "user", "content": user}]
 
 
+def translate_messages_revision(source: str, analyses: list[Analysis], current_translation: str,
+                                issues: list[str], has_placeholders: bool, markdown: bool,
+                                extra_terms: list[str] | None = None, glossary: dict[str, str] | None = None,
+                                context: Context | None = None) -> list[dict]:
+    """A chat prompt asking the translate model to revise its translation in light of reviewer critique."""
+    specials = special_words(analyses, glossary)
+    names = sorted({r for _, r in specials.get("name", [])})
+    honorifics = sorted({r for _, r in specials.get("honorific", [])})
+    terms = sorted({r for _, r in specials.get("technical", [])} | set(extra_terms or []))
+    rules = [
+        "Address and fix EVERY issue identified by the reviewer below.",
+        "Render every word; drop no particle (ca, vā, pi, eva, hi, kho, pana, iti are all rendered).",
+        "Leave personal names, place names and titles of texts untranslated in their stem form" + (": " + ", ".join(names) if names else "") + ".",
+        "Leave honorifics and titles of persons untranslated exactly as they stand in the text" + (": " + ", ".join(honorifics) if honorifics else "") + ".",
+        "Where a word is used as a technical term, keep it as it stands in the text in backticks with a short English "
+        "gloss in parentheses on its first occurrence, like `viññāṇaṃ` (consciousness), and use the plain gloss afterwards"
+        + ("; candidates in this text: " + ", ".join(terms) if terms else "") + ".",
+    ]
+    if has_placeholders:
+        rules.append("Reproduce every %%number%% placeholder exactly, in the same position relative to the surrounding words.")
+    if markdown:
+        rules.append("Keep the Markdown formatting (asterisks, line breaks) exactly as it is.")
+    if context:
+        rules.append("Render the words and formulas this text shares with the preceding segments exactly as they were rendered there.")
+    user = (
+        ("Preceding segments of the same text and their translations:\n" + "\n".join(f"- {s}\n  → {t}" for s, t in context) + "\n\n" if context else "") +
+        "Revise the translation of this " + LANGUAGE["name"] + " text into English, fixing every issue found by the reviewer.\n\n" +
+        LANGUAGE["name"] + ":\n" + source + "\n\n" +
+        "Previous draft translation:\n" + current_translation + "\n\n" +
+        "Reviewer critique (issues to correct):\n" + "\n".join(f"- {iss}" for iss in issues) + "\n\n" +
+        "Dictionary analysis of every word:\n" + analysis_table(analyses) + "\n\n" +
+        "Rules:\n" + "\n".join(f"{i}. {r}" for i, r in enumerate(rules, 1)) +
+        "\n\nProvide the complete revised translation only, with no commentary or explanation."
+    )
+    return [{"role": "system", "content": GENERIC_SYSTEM}, {"role": "user", "content": user}]
+
+
 REVIEW_SYSTEM = (
     "You are a meticulous reviewer of translations from Pāli and Sanskrit into English. You check a draft translation word by word "
     "against the source and against a dictionary analysis of every word (part of "
@@ -336,10 +385,10 @@ def parse_review(text: str, n_segments: int) -> ReviewResult:
     issues_text, revised_text = m.group(1).strip(), m.group(2).strip()
     issues = [ln.strip().lstrip("-•* ").strip() for ln in issues_text.splitlines() if ln.strip()]
     issues = [i for i in issues if i and i.lower() not in ("none", "none.", "- none", "no issues", "no issues.")]
-    # a rambling reviewer writes its deliberation as bullets: keep the lines that name a segment or a Pāli word
-    kept = [i for i in issues if len(i) <= 400 and (re.search(r"\[\d+\]|segment \d", i, re.I) or re.search(r"[āīūṃṅñṭḍṇḷ]", i))
-            and not re.match(r"(?i)(let's|actually|wait|however|looking|the (standard|current|previous)|pāli:|literal:|q:|a:|this (is|looks|implies|translates))", i)]
-    res.issues = kept if kept else issues[:8]
+    # a rambling reviewer writes its deliberation as bullets: keep the lines that name a segment or a source word
+    kept = [i for i in issues if len(i) <= 400 and (re.search(r"\[\d+\]|segment \d", i, re.I) or re.search(r"[āīūṃṅñṭḍṇḷśṣṛṝḷḥṁ]", i))
+            and not re.match(r"(?i)(let's|actually|wait|however|looking|the (standard|current|previous)|pāli:|sanskrit:|literal:|q:|a:|this (is|looks|implies|translates))", i)]
+    res.issues = (kept if kept else issues)[:8]
     current: int | None = None
     buf: dict[int, list[str]] = {}
     for ln in revised_text.splitlines():

@@ -40,6 +40,30 @@ def test_bhs_readings():
     assert any(r[0] == "loke" for r in readings("lokasmiṃ"))
     assert any(r[0] == "bodhisattvaḥ" for r in readings("bodhisatvo"))
     assert any(r[0] == "ekānte" for r in readings("ekāṃte"))
+    assert any(r[0] == "sahasra" for r in readings("sahastra"))
+    assert any(r[0] == "āyuṣmantam" for r in readings("āyusmantam"))
+
+
+def test_panini_rules():
+    from kavi.panini import (
+        compound_junction_variants,
+        external_sandhi_cands,
+        is_agent_tr,
+        undo_initial_vrddhi,
+        undo_natva,
+        undo_satva,
+    )
+    assert is_agent_tr("kartṛ") and is_agent_tr("gantṛ") and is_agent_tr("bhoktṛ")
+    assert not is_agent_tr("pitṛ") and not is_agent_tr("mātṛ") and not is_agent_tr("svasṛ")
+    assert "namati" in undo_natva("pra", "ṇamati")
+    assert "sthitam" in undo_satva("prati", "ṣṭhitam")
+    assert "durmanas" in undo_initial_vrddhi("daurmanas")
+    assert "loka" in undo_initial_vrddhi("lauka")
+    assert ("niḥ", "roga") in compound_junction_variants("nī", "roga")
+    assert ("mahā", "ṛṣi") in compound_junction_variants("mahar", "ṣi")
+    assert ("eka", "bhūta") in compound_junction_variants("ekī", "bhūta")
+    assert ("punar", "ramate") in external_sandhi_cands("punāramate", 3)
+    assert ("antaḥ", "śauṣiryam") in external_sandhi_cands("antaḥśauṣiryam", 4)
 
 
 @pytest.mark.skipif(not HAVE_DATA, reason="Sanskrit data not installed (kavi setup --sanskrit)")
@@ -108,3 +132,23 @@ def test_lexicon_words():
     assert a.headwords[0].construction == "na + dhātu"
     a = lx.analyse("upasaṃkkramya")
     assert a.headwords[0].pos == "abs" and a.headwords[0].lemma == "upasaṃkrāmati"
+    # Pāṇinian rules & DSBC compound/sandhi tests
+    a = lx.analyse("tadeva")
+    assert a.splits[0].parts == ["tad", "eva"]
+    a = lx.analyse("parakṛtam")
+    assert a.headwords[0].construction == "para + kṛta + ta" and a.headwords[0].pos == "pp"
+    a = lx.analyse("kiṃcit")
+    assert a.headwords[0].lemma == "kaścit" and a.headwords[0].pos == "pron" and a.headwords[0].construction == "kim + cit"
+    for agent_form, stem in [("kartā", "kartṛ"), ("gantā", "gantṛ"), ("bhoktā", "bhoktṛ")]:
+        a = lx.analyse(agent_form)
+        assert a.headwords[0].lemma == stem and a.headwords[0].pos == "masc" and "masc nom sg" in a.headwords[0].parses
+    a = lx.analyse("utpādotpādamutpādo")
+    assert a.splits[0].parts == ["utpādotpādam", "utpādo"]
+    a = lx.analyse("abdhātuḥ")
+    assert a.headwords[0].construction == "ap + dhātu"
+    a = lx.analyse("kāyasyāntaḥśauṣiryamabhinirvartayati")
+    assert a.splits[0].parts == ["kāyasya", "antaḥ", "śauṣiryam", "abhinirvartayati"]
+    a = lx.analyse("bhagavānāyusmantamānandamāmantrayate")
+    assert a.splits[0].parts == ["bhagavān", "āyusmantam", "ānandam", "āmantrayate"]
+    a = lx.analyse("pṛthivyaptejovāyvākāśaṛtudhātusamavāyād")
+    assert a.headwords[0].construction == "pṛthivī + ap + tejas + vāyu + ākāśa + ṛtu + dhātu + samavāya"

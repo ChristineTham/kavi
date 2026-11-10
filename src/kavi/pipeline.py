@@ -1,17 +1,18 @@
-"""The translation pipeline.
+"""The unified translation pipeline.
 
-For each translatable block of the document:
+Regardless of whether the user chooses interlinear or prose output:
+1. Every translatable block is segmented into units (sentences, verse lines, headings, list items, or table cells).
+2. The units are analysed word by word using the language lexicon (DPD for Pāḷi; vidyut and Cologne for Sanskrit).
+3. The unified model selects candidate parses, generates word-by-word glosses, and drafts the translation.
+4. An agentic self-improving loop (review harness + revision turns) evaluates and improves the translation
+   against the candidate parses, glossary rulings, and conventions.
+5. Deterministic linting enforces technical terms and house styles.
 
-1. the inline markup is protected with placeholders and the block's words are analysed with the DPD
-   (sandhi resolved with the deconstructor and Kaccāyana's rules);
-2. the translate model produces a literal draft, with the word analysis as in-context reference; a long
-   paragraph is translated sentence by sentence;
-3. consecutive drafts are gathered into batches and the instruction-tuned model reviews each batch against the
-   Pāli and the analysis, returning issues and a revised text;
-4. step 3 repeats until the reviewer reports no issues or the round limit is reached.
-
-Placeholders, Markdown structure and hard line breaks are checked on the way back; a model output that loses
-them is discarded and the previous text kept.
+Output rendering:
+- Prose-only output (default): the interlinear lines are omitted, producing clean translated prose
+  with the Markdown formatting and layout preserved exactly from the original text.
+- Interlinear output (--interlinear): four lines per unit (source, analysis symbols, glosses, translated prose).
+- Both forms are always accessible via Result.markdown, Result.en_markdown, and Result.interlinear_markdown.
 """
 
 from __future__ import annotations
@@ -21,18 +22,29 @@ import json
 import re
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
 from .config import Settings
-from .language import set_language
 from .dpd import DPD, Analysis, analyse_text, analysis_table
-from .lint import Finding, lint
-from .models import (ModelPool, is_degenerate, is_meta, is_mitra_translate, parse_review, review_prompt,
-                     strip_wrapper, translate_messages_generic, translate_prompt)
-from .segment import (Block, PH_RE, parse_markdown, placeholders_ok, protect, render, restore, split_sentences,
-                      word_count)
+from .glossary import honorific_form
+from .interlinear import (
+    Token, Parse, analyse_tokens, format_mantra, load_segments, match_segments,
+    modern, parse_answer, prompt_for, reconcile_case, system_prompt, units_pieces,
+    _clean_quotes, _conventional,
+)
+from .language import LANGUAGE, set_language
+from .lint import Finding, lint, HONORIFICS, HONORIFIC_MEANINGS, _clean_dict_gloss
+from .models import (
+    ModelPool, clear_metal_cache, is_degenerate, is_meta, is_mitra_translate,
+    parse_review, review_prompt, strip_wrapper, translate_messages_generic,
+    translate_messages_revision, translate_prompt,
+)
+from .segment import (
+    Block, HAS_LETTERS_RE, PH_RE, parse_markdown, placeholders_ok, protect,
+    render, restore, split_sentences, word_count,
+)
 
 Progress = Callable[[str], None]
 
@@ -49,29 +61,77 @@ class Round:
 
 @dataclass
 class Unit:
-    """One translatable piece: a paragraph, heading, list item or table cell."""
+    """One translatable piece: a sentence, heading, list item or table cell."""
     block: Block
-    cell: tuple[int, int] | None          # (row, col) for a table cell
-    source: str                            # text as it stands in the document (with inline markup)
-    masked: str                            # with placeholders
-    kept: list[str]
-    analyses: list[Analysis] = field(default_factory=list)
-    draft: str = ""                        # the translate model's output (masked)
-    current: str = ""                      # the latest accepted translation (masked)
+    cell: tuple[int, int] | None = None          # (row, col) for a table cell
+    source: str = ""                            # text as it stands in the document
+    masked: str = ""                            # with placeholders
+    kept: list[str] = field(default_factory=list)
+    number: str = ""                            # e.g. "1.1" or "0.2"
+    verse: bool = False
+    tokens: list[Token] = field(default_factory=list)
+    analyses_override: list[Analysis] | None = None
+    draft: str = ""
+    current: str = ""
     rounds: list[Round] = field(default_factory=list)
     from_cache: bool = False
     rejected: list[str] = field(default_factory=list)
-    lint: list[Finding] = field(default_factory=list)      # findings on the draft (fixes applied, asks open)
+    lint: list[Finding] = field(default_factory=list)
     open_findings: list[Finding] = field(default_factory=list)
-    kept_source: bool = False                              # a title made only of names/terms: not translated
+    kept_source: bool = False
+    raw: str = ""
+
+    @property
+    def text(self) -> str:
+        return self.source
+
+    @property
+    def translation(self) -> str:
+        return self.current or self.draft or self.source
+
+    @translation.setter
+    def translation(self, val: str) -> None:
+        self.current = val
 
     @property
     def final(self) -> str:
-        return restore(self.current or self.draft or self.masked, self.kept)
+        text = self.current or self.draft or self.masked or self.source
+        return restore(text, self.kept) if self.kept else text
 
     @property
     def words(self) -> int:
-        return word_count(self.masked)
+        return word_count(self.masked or self.source)
+
+    @property
+    def analyses(self) -> list[Analysis]:
+        if self.analyses_override is not None:
+            return self.analyses_override
+        if not self.tokens:
+            return []
+        out: list[Analysis] = []
+        for t in self.tokens:
+            if t.analysis is None:
+                continue
+            if t.chosen and t.chosen.headword:
+                ch = t.chosen.headword
+                if t.chosen.case:
+                    p_str = " ".join(x for x in (t.chosen.gender, t.chosen.case, t.chosen.number) if x)
+                    ch = replace(ch, parses=[p_str])
+                rest = [h for h in t.analysis.headwords if h is not t.chosen.headword]
+                out.append(replace(t.analysis, headwords=[ch] + rest))
+            else:
+                out.append(t.analysis)
+        return out
+
+    @analyses.setter
+    def analyses(self, val: list[Analysis]) -> None:
+        self.analyses_override = val
+
+    def analysis_line(self) -> str:
+        return " ".join(t.parse.symbols() for t in self.tokens)
+
+    def gloss_line(self) -> str:
+        return " | ".join(t.gloss or t.surface for t in self.tokens)
 
 
 @dataclass
@@ -80,6 +140,8 @@ class Result:
     units: list[Unit]
     seconds: float
     model_calls: int
+    en_markdown: str = ""
+    interlinear_markdown: str = ""
 
     @property
     def analyses(self) -> list[Analysis]:
@@ -98,11 +160,17 @@ class Result:
     def report(self) -> str:
         lines = []
         for i, u in enumerate(self.units, 1):
-            lines.append(f"### Segment {i}\n\n> {u.source}\n\n{u.final}")
+            num = f"Segment {u.number}" if u.number else f"Segment {i}"
+            lines.append(f"### {num}\n\n> {u.source}\n\n{u.final}")
             if u.from_cache:
                 lines.append("_(from cache)_")
+            if u.tokens:
+                lines.append("\n**Analysis:**")
+                for n, t in enumerate(u.tokens, 1):
+                    if not t.punct:
+                        lines.append(f"- {n}. {t.surface} → {t.parse.symbols()} “{t.gloss}”")
             if u.draft and u.draft != u.current:
-                lines.append(f"\nDraft: {restore(u.draft, u.kept)}")
+                lines.append(f"\nDraft: {u.draft}")
             if u.lint:
                 lines.append("\n**Checker on the draft:**")
                 lines.extend(f"- {'fixed' if f.severity == 'fix' else 'to fix'}: {f}" for f in u.lint)
@@ -111,7 +179,7 @@ class Result:
                 lines.append(head + ("no issues reported" if not r.issues else ""))
                 lines.extend(f"- {iss}" for iss in r.issues)
                 if r.after != r.before:
-                    lines.append(f"\nRevised to: {restore(r.after, u.kept)}")
+                    lines.append(f"\nRevised to: {r.after}")
                 if r.lint_after:
                     lines.append("Still open after this round: " + "; ".join(r.lint_after))
             if u.open_findings:
@@ -120,6 +188,10 @@ class Result:
                 lines.append(f"- rejected model output: {rej}")
             lines.append("")
         return "\n".join(lines)
+
+
+# InterlinearResult is an alias for Result
+InterlinearResult = Result
 
 
 class Translator:
@@ -138,12 +210,15 @@ class Translator:
                 self.cache = json.loads(self.cache_path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 self.cache = {}
+        self._seen_spans: set[str] = set()
+        self._glossed: set[str] = set()
 
     # -- cache ------------------------------------------------------------------------
 
-    def _key(self, masked: str) -> str:
-        raw = "\x00".join([masked, Path(self.s.translate_model).name, Path(self.s.eval_model).name,
-                           str(self.s.max_rounds), str(self.s.thinking), "|".join(self.s.glossary_terms)])
+    def _key(self, text: str, tokens: list[Token] | None = None) -> str:
+        cands = "|".join(f"{t.key}:" + ",".join(p.symbols() for p in t.candidates) for t in tokens or [] if not t.punct)
+        raw = "\x00".join([modern(text).strip(), Path(self.s.translate_model).name, Path(self.s.eval_model).name,
+                           str(self.s.max_rounds), str(self.s.thinking), "|".join(self.s.glossary_terms), cands])
         return hashlib.sha256(raw.encode()).hexdigest()
 
     def save_cache(self) -> None:
@@ -156,57 +231,11 @@ class Translator:
     def analyse(self, text: str) -> list[Analysis]:
         return analyse_text(self.dpd, text)
 
-    # -- units --------------------------------------------------------------------------
-
-    def _units(self, blocks: list[Block]) -> list[Unit]:
-        units: list[Unit] = []
-        for b in blocks:
-            if b.kind == "table":
-                b.cell_translations = [[None] * len(r) for r in b.cells]
-                for ri, row in enumerate(b.cells):
-                    for ci, cell in enumerate(row):
-                        if re.search(r"[^\W\d_]", cell) and len(cell.split()) >= 1 and not re.fullmatch(r"[\W\d_%]+", cell):
-                            masked, kept = protect(cell)
-                            if re.search(r"[^\W\d_]", PH_RE.sub("", masked)):
-                                units.append(Unit(b, (ri, ci), cell, masked, kept))
-            elif b.translatable:
-                masked, kept = protect(b.text)
-                if re.search(r"[^\W\d_]", PH_RE.sub("", masked)):
-                    units.append(Unit(b, None, b.text, masked, kept))
-        return units
-
-    # -- translation ----------------------------------------------------------------------
-
-    def _translate_one(self, masked: str, analyses: list[Analysis], single_line: bool, markdown: bool,
-                       context: list[tuple[str, str]] | None = None) -> str | None:
-        model = self.models.get("translate")
-        has_ph = bool(PH_RE.search(masked))
-        if is_mitra_translate(model.path):
-            messages = [{"role": "user", "content": translate_prompt(
-                masked, analyses, has_ph, markdown, extra_terms=self.s.glossary_terms, glossary=self.s.glossary_map,
-                context=context)}]
-        else:
-            messages = translate_messages_generic(masked, analyses, has_ph, markdown, extra_terms=self.s.glossary_terms,
-                                                  glossary=self.s.glossary_map, context=context)
-        for temp in (self.s.temperature, 0.2):
-            self.calls += 1
-            reply = model.chat(messages, max_tokens=self.s.max_tokens, temperature=temp, thinking=self.s.thinking)
-            if reply.finish_reason == "length":
-                continue
-            out = strip_wrapper(reply.text)
-            if not out or is_degenerate(out, masked) or is_meta(out):
-                continue
-            if single_line and "\n" in out:
-                out = " ".join(out.split())
-            if placeholders_ok(out, masked):
-                return out
-        return None
-
     def _title_of_names(self, unit: Unit) -> bool:
         """A heading or cell of up to three words that are all names, honorifics, technical terms or numbers."""
         if unit.block.kind not in ("heading", "table") or unit.words > 3:
             return False
-        words = [a for a in unit.analyses]
+        words = unit.analyses or analyse_text(self.dpd, unit.source)
         if not words:
             return False
         for a in words:
@@ -215,46 +244,150 @@ class Translator:
                 return False
         return True
 
-    def draft(self, unit: Unit, context: list[tuple[str, str]] | None = None) -> None:
-        """``context``: the preceding segments (Pāḷi, current translation), newest last, for consistency."""
-        if self._title_of_names(unit):
-            unit.draft = unit.masked
-            unit.kept_source = True
-            fixed, findings = lint(unit.analyses, unit.draft, self.s.glossary_map, alternatives=self.s.glossary_alternatives)
-            unit.current = fixed if placeholders_ok(fixed, unit.masked) else unit.draft
-            unit.lint = findings
-            unit.open_findings = []
-            return
-        single = unit.block.kind in ("heading", "list", "table")
-        markdown = "*" in unit.masked or "_" in unit.masked
-        if unit.words > self.s.sentence_words and "\n" not in unit.masked:
-            parts = split_sentences(unit.masked)
-        else:
-            parts = [unit.masked]
-        outs = []
-        ctx = list(context or [])
-        for part in parts:
-            an = [a for a in unit.analyses if a.key in {k.lower() for k in _keys(part)}] if len(parts) > 1 else unit.analyses
-            out = self._translate_one(part, an or unit.analyses, single, markdown, ctx[-self.s.context_segments:] or None)
-            if out is not None and len(parts) > 1:
-                ctx.append((part, out))                     # earlier sentences of a long paragraph guide the later ones
-            if out is None:
-                unit.rejected.append(f"translate model gave no usable output for: {part[:60]}")
-                out = part                       # leave the source in place
-            outs.append(out)
-        unit.draft = " ".join(outs) if len(parts) > 1 else outs[0]
-        fixed, findings = lint(unit.analyses, unit.draft, self.s.glossary_map, alternatives=self.s.glossary_alternatives)
-        if placeholders_ok(fixed, unit.masked):
-            unit.current = fixed
-        else:
-            unit.current = unit.draft
+    def _gloss_once(self, text: str) -> str:
+        """A technical term or honorific is written `word` (gloss) on its first use in the document and as the plain word after (Sanskrit) or plain gloss after (Pāli)."""
+        def once(m: re.Match) -> str:
+            key = re.sub(r"[ṃṁoāaeīiūs]+$", "", m.group(1).lower())
+            if key in self._seen_spans:
+                return m.group(1) if LANGUAGE.get("code") == "sa" else m.group(2)
+            self._seen_spans.add(key)
+            self._glossed.add(key)
+            return m.group(0)
+        return re.sub(r"`([^`]+)` \(([^()]*)\)", once, text)
+
+    def _apply(self, unit: Unit, choice: dict[int, int], gloss: dict[int, str], translation: str) -> None:
+        glossary = self.s.glossary_map
+        alternatives = self.s.glossary_alternatives
+        for n, t in enumerate(unit.tokens, 1):
+            if t.punct:
+                t.gloss = t.surface
+                continue
+            c = choice.get(n)
+            if c is not None and t.candidates and 1 <= c <= len(t.candidates):
+                t.chosen = t.candidates[c - 1]
+            elif t.candidates:
+                t.chosen = t.candidates[0]
+            t.gloss = gloss.get(n, "")
+            t.chosen = reconcile_case(t.chosen, t.candidates, t.gloss)
+            for stem, alts in alternatives.items():
+                if stem[:-1] in (t.key or "") and t.gloss:
+                    for alt in sorted(alts, key=len, reverse=True):
+                        t.gloss = re.sub(r"\b" + re.escape(alt) + r"s?\b", glossary[stem], t.gloss, flags=re.I)
+            h = t.chosen.headword if t.chosen else None
+            is_voc = (h is None or (h.pos != "ind" and h.kind != "name")) and (
+                (t.chosen and t.chosen.case == "voc") or (not t.chosen and h and bool(h.parses) and all("voc" in p for p in h.parses))
+            )
+            is_hon = (h and h.kind != "name" and (h.kind == "honorific" or h.stem.lower() in HONORIFICS or h.stem.lower() in HONORIFIC_MEANINGS)) or is_voc
+            if is_voc and not is_hon:
+                t.gloss = modern(h.stem).capitalize() if (h and h.kind == "name") else modern(t.surface)
+            elif is_hon:
+                form = honorific_form(h.stem if h else t.surface, t.surface, h.parses if h else [], getattr(h, "family_set", ""))
+                t.gloss = _conventional(t.gloss, modern(form))
+            elif h is not None:
+                if h.stem in glossary:
+                    t.gloss = _conventional(t.gloss, glossary[h.stem])
+                elif h.kind == "name":
+                    t.gloss = _conventional(t.gloss, modern(h.stem).capitalize())
+                elif h.kind == "honorific":
+                    t.gloss = _conventional(t.gloss, modern(honorific_form(h.stem, t.surface, h.parses, h.family_set)))
+                if not t.gloss:
+                    t.gloss = "(end quote)" if t.chosen and t.chosen.lemma == "iti" else (_clean_dict_gloss(h.meaning or h.meaning_2 or "?") or "?")
+            elif not t.gloss:
+                t.gloss = "?"
+        translation = _clean_quotes(translation)
+        if not translation:
+            translation = " ".join(t.gloss for t in unit.tokens if not t.punct)
+        fixed, findings = lint(unit.analyses, translation, glossary, alternatives=self.s.glossary_alternatives,
+                               gloss_honorifics=True, glossed=self._glossed)
+        fixed = format_mantra(unit.source, fixed)
+        fixed = self._gloss_once(fixed)
+        unit.current = unit.translation = modern(fixed) if re.search(r"[ṃ]", fixed) else fixed
+        unit.draft = unit.translation
         unit.lint = findings
         unit.open_findings = [f for f in findings if f.severity == "ask"]
 
-    # -- review -------------------------------------------------------------------------------
+    # -- translation & revision --------------------------------------------------------
+
+    def draft(self, unit: Unit, context: list[tuple[str, str]] | None = None) -> None:
+        unit.tokens = analyse_tokens(self.dpd, unit.source)
+        key = self._key(unit.source, unit.tokens)
+        if key in self.cache:
+            c = self.cache[key]
+            tr_cached = c.get("translation", "")
+            if tr_cached and c.get("gloss") and not tr_cached.rstrip().endswith("\\\\"):
+                unit.from_cache = True
+                self._apply(unit, {int(k): v for k, v in c.get("choice", {}).items()},
+                            {int(k): v for k, v in c.get("gloss", {}).items()}, tr_cached)
+                return
+
+        if self._title_of_names(unit):
+            unit.draft = unit.source
+            unit.kept_source = True
+            fixed, findings = lint(unit.analyses or analyse_text(self.dpd, unit.source),
+                                   unit.draft, self.s.glossary_map, alternatives=self.s.glossary_alternatives)
+            unit.current = unit.translation = fixed
+            unit.lint = findings
+            unit.open_findings = []
+            return
+
+        model = self.models.get("translate")
+        user_prompt = prompt_for(unit.source, unit.tokens, self.s.glossary_map, context or [])
+        no_word_prompt = user_prompt.replace(
+            'repeating the word, in this form: {"words": [{"n": 1, "word": "evaṁ", "parse": 1, "gloss": "thus"}, {"n": 2, "word": "me", "parse": 3, "gloss": "by me"}], "translation": "…"}',
+            'in this form: {"words": [{"n": 1, "parse": 1, "gloss": "thus"}, {"n": 2, "parse": 3, "gloss": "by me"}], "translation": "…"}',
+        )
+        first_prompt = no_word_prompt if LANGUAGE.get("code") == "sa" else user_prompt
+        choice: dict[int, int] = {}
+        gloss: dict[int, str] = {}
+        translation = ""
+        for temp, use_thinking, max_tok, up in (
+            (self.s.temperature, self.s.thinking, self.s.max_tokens, first_prompt),
+            (0.2, False, self.s.max_tokens, no_word_prompt),
+            (0.2, True, max(self.s.max_tokens, 4096), no_word_prompt),
+        ):
+            self.calls += 1
+            messages = [{"role": "system", "content": system_prompt()}, {"role": "user", "content": up}]
+            reply = model.chat(messages, max_tokens=max_tok, temperature=temp, thinking=use_thinking)
+            unit.raw = reply.text
+            choice, gloss, translation = parse_answer(reply.text, unit.tokens)
+            if not translation and not choice and reply.text.strip():
+                # Fallback for models or mocks returning plain translation text
+                translation = strip_wrapper(reply.text)
+            if (gloss or not unit.tokens) and translation:
+                break
+        self._apply(unit, choice, gloss, translation)
+
+    def _revise_one(self, source: str, analyses: list[Analysis], current: str, issues: list[str],
+                    single_line: bool = False, markdown: bool = False,
+                    context: list[tuple[str, str]] | None = None) -> str | None:
+        """The translation model refines its translation addressing reviewer issues."""
+        model = self.models.get("translate")
+        if is_mitra_translate(model.path):
+            messages = [{"role": "user", "content": translate_prompt(
+                source, analyses, False, markdown, extra_terms=self.s.glossary_terms, glossary=self.s.glossary_map,
+                context=context)}]
+        else:
+            messages = translate_messages_revision(
+                source, analyses, current, issues, False, markdown,
+                extra_terms=self.s.glossary_terms, glossary=self.s.glossary_map, context=context)
+        max_tok = min(self.s.max_tokens, max(256, len(source.split()) * 8))
+        for temp in (self.s.temperature, 0.2):
+            self.calls += 1
+            reply = model.chat(messages, max_tokens=max_tok, temperature=temp, thinking=self.s.thinking)
+            if reply.finish_reason == "length":
+                continue
+            out = strip_wrapper(reply.text)
+            if not out or is_degenerate(out, source) or is_meta(out):
+                continue
+            if single_line and "\n" in out:
+                out = " ".join(out.split())
+            return out
+        return None
+
+    # -- review harness loop ----------------------------------------------------------
 
     def review_batch(self, units: list[Unit]) -> bool:
-        """One review round over a batch. Returns True if the reviewer found issues (and revisions were applied)."""
+        """One review round over a batch. Returns True if issues were found and revised."""
         model = self.models.get("review")
         seen: set[str] = set()
         analyses = []
@@ -263,52 +396,69 @@ class Translator:
                 if a.key not in seen:
                     seen.add(a.key)
                     analyses.append(a)
-        units = [u for u in units if not u.kept_source]
-        if not units:
+        active_units = [u for u in units if not u.kept_source]
+        if not active_units:
             return False
-        segments = [(u.masked, u.current) for u in units]
-        known = {n: [str(f) for f in u.open_findings] for n, u in enumerate(units, 1) if u.open_findings}
+        segments = [(u.source, u.final) for u in active_units]
+        known = {n: [str(f) for f in u.open_findings] for n, u in enumerate(active_units, 1) if u.open_findings}
         prompt = review_prompt(segments, analyses, extra_terms=self.s.glossary_terms, glossary=self.s.glossary_map, known=known)
         t0 = time.time()
         self.calls += 1
-        reply = model.chat([{"role": "system", "content": "You are a meticulous reviewer of Pāli-to-English translations."},
+        rev_max_tokens = min(self.s.max_tokens, max(512, len(active_units) * 256))
+        reply = model.chat([{"role": "system", "content": f"You are a meticulous reviewer of {LANGUAGE['name']}-to-English translations."},
                             {"role": "user", "content": prompt}],
-                           max_tokens=self.s.max_tokens * 2, temperature=self.s.temperature, thinking=self.s.thinking)
-        res = parse_review(reply.text, len(units))
+                           max_tokens=rev_max_tokens, temperature=self.s.temperature, thinking=self.s.thinking)
+        res = parse_review(reply.text, len(active_units))
         seconds = time.time() - t0
         if not res.parsed:
-            for u in units:
+            for u in active_units:
                 u.rejected.append("review output could not be parsed" + (" (truncated)" if reply.finish_reason == "length" else ""))
             return False
         changed = False
         still_open = False
-        for n, u in enumerate(units, 1):
-            before = u.current
-            after = res.revised.get(n, before).strip()
-            mine = [i for i in res.issues if re.search(rf"\[{n}\]|segment {n}\b", i, re.I)] or ([] if len(units) > 1 else res.issues)
-            if after and after != before:
-                if placeholders_ok(after, u.masked) and not is_degenerate(after, u.masked) and not is_meta(after):
-                    if u.block.kind in ("heading", "list", "table") and "\n" in after:
-                        after = " ".join(after.split())
-                    changed = True
-                else:
-                    u.rejected.append(f"revision rejected (placeholders/degenerate): {after[:60]}")
-                    after = before
-            # the checker runs again on the revision: its string fixes are applied, its open asks carry over
-            fixed, findings = lint(u.analyses, after, self.s.glossary_map, alternatives=self.s.glossary_alternatives)
-            if fixed != after and placeholders_ok(fixed, u.masked):
-                after = fixed
+        for n, u in enumerate(active_units, 1):
+            before = u.final
+            mine = [i for i in res.issues if re.search(rf"\[{n}\]|segment {n}\b", i, re.I)] or ([] if len(active_units) > 1 else res.issues)
+            after = before
+            if mine and not is_mitra_translate(self.models.get("translate").path):
+                revised_draft = self._revise_one(
+                    u.source, u.analyses, before, mine,
+                    single_line=u.block.kind in ("heading", "list", "table"),
+                    markdown="*" in u.source or "_" in u.source,
+                    context=None
+                )
+                if revised_draft and revised_draft != before and not is_degenerate(revised_draft, u.source) and not is_meta(revised_draft):
+                    if u.block.kind in ("heading", "list", "table") and "\n" in revised_draft:
+                        revised_draft = " ".join(revised_draft.split())
+                    after = revised_draft
+                elif res.revised.get(n) and res.revised[n].strip() != before:
+                    rev = res.revised[n].strip()
+                    if not is_degenerate(rev, u.source) and not is_meta(rev):
+                        if u.block.kind in ("heading", "list", "table") and "\n" in rev:
+                            rev = " ".join(rev.split())
+                        after = rev
+            elif res.revised.get(n) and res.revised[n].strip() != before:
+                rev = res.revised[n].strip()
+                if not is_degenerate(rev, u.source) and not is_meta(rev):
+                    if u.block.kind in ("heading", "list", "table") and "\n" in rev:
+                        rev = " ".join(rev.split())
+                    after = rev
+
+            fixed, findings = lint(u.analyses, after, self.s.glossary_map, alternatives=self.s.glossary_alternatives,
+                                   gloss_honorifics=True, glossed=self._glossed)
+            fixed = format_mantra(u.source, fixed)
+            after = modern(fixed) if re.search(r"[ṃ]", fixed) else fixed
+            if after != before:
                 changed = True
-            u.current = after
+            u.current = u.translation = after
             u.open_findings = [f for f in findings if f.severity == "ask"]
             if u.open_findings:
                 still_open = True
             u.rounds.append(Round(mine, before, after, seconds, lint_before=known.get(n, []),
                                   lint_after=[str(f) for f in u.open_findings]))
-        revised = sum(1 for n, u in enumerate(units, 1) if res.revised.get(n, "").strip() not in ("", u.rounds[-1].before))
+        revised = sum(1 for n, u in enumerate(active_units, 1) if res.revised.get(n, "").strip() not in ("", u.rounds[-1].before))
         self.progress(f"  reviewer: {len(res.issues)} issue(s), {revised} segment(s) revised; checker: "
-                      f"{sum(len(u.open_findings) for u in units)} finding(s) still open")
-        # another round is worth running only if this one changed something and problems remain
+                      f"{sum(len(u.open_findings) for u in active_units)} finding(s) still open")
         return changed and (bool(res.issues) or still_open)
 
     def _batches(self, units: list[Unit]) -> list[list[Unit]]:
@@ -316,6 +466,8 @@ class Translator:
         cur: list[Unit] = []
         words = 0
         for u in units:
+            if u.kept_source:
+                continue
             if cur and words + u.words > self.s.eval_batch_words:
                 batches.append(cur)
                 cur, words = [], 0
@@ -325,55 +477,159 @@ class Translator:
             batches.append(cur)
         return batches
 
-    # -- document -------------------------------------------------------------------------------
+    # -- document rendering ------------------------------------------------------------
 
-    def translate_markdown(self, text: str, review: bool = True) -> Result:
+    def render_group(self, u: Unit, with_translation: bool = True) -> list[str]:
+        num_str = f"{u.number} " if u.number else ""
+        lines = [f"{num_str}{modern(u.source).strip()}  ", u.analysis_line() + "  ", u.gloss_line() + ("  " if with_translation else "")]
+        if with_translation:
+            lines.append(u.final)
+        return lines
+
+    def translate_markdown(self, text: str, segments: list[tuple[str, str]] | None = None,
+                           interlinear: bool = False, review: bool = True) -> Result:
         t0 = time.time()
         blocks = parse_markdown(text)
-        units = self._units(blocks)
-        todo: list[Unit] = []
-        for i, u in enumerate(units, 1):
-            key = self._key(u.masked)
-            if key in self.cache:
-                c = self.cache[key]
-                u.current = u.draft = c["translation"]
-                u.from_cache = True
-                u.analyses = self.analyse(u.source)
+        blocks_en = parse_markdown(text)
+        blocks_inter = parse_markdown(text)
+
+        units_all: list[Unit] = []
+        seg_pos = 0
+        para_no = 0
+        recent: list[tuple[str, str]] = []
+
+        for b, b_en, b_inter in zip(blocks, blocks_en, blocks_inter):
+            if not b.translatable or not HAS_LETTERS_RE.search(b.text or " ".join(c for r in b.cells for c in r)):
                 continue
-            todo.append(u)
-        self.progress(f"{len(units)} segments, {len(todo)} to translate ({len(units) - len(todo)} cached)")
-        recent: list[tuple[str, str]] = []                  # (Pāḷi, translation) of the preceding prose segments
-        for i, u in enumerate(todo, 1):
-            u.analyses = self.analyse(u.source)
-            unknown = sum(1 for a in u.analyses if not a.found)
-            self.progress(f"[{i}/{len(todo)}] {u.words} words, {len(u.analyses)} distinct, {unknown} unknown: translating …")
-            self.draft(u, recent[-self.s.context_segments:] or None)
-            if u.block.kind in ("para", "list") and not u.kept_source and u.words >= 4:
-                recent.append((u.masked, u.current))
-            fixes = sum(1 for f in u.lint if f.severity == "fix")
-            if u.lint:
-                self.progress(f"  checker: {fixes} fix(es) applied, {len(u.open_findings)} for the reviewer")
-        if review and self.s.max_rounds > 0 and todo:
-            if self.s.translate_model != self.s.eval_model and self.s.release_translator:
-                self.models.release("translate")
-            for bi, batch in enumerate(self._batches(todo), 1):
+
+            if b.kind == "heading":
+                para_no += 1
+                u = Unit(block=b, source=b.text, masked=b.text, kept=[], number=f"0.{para_no}")
+                self.draft(u, recent[-self.s.context_segments:] or None)
+                units_all.append(u)
+                b_en.translation = u.final
+                b_inter.translation = u.final
+
+            elif b.kind == "list":
+                para_no += 1
+                u = Unit(block=b, source=b.text, masked=b.text, kept=[], number=f"L.{para_no}")
+                self.draft(u, recent[-self.s.context_segments:] or None)
+                units_all.append(u)
+                b_en.translation = u.final
+                b_inter.translation = u.final
+
+            elif b.kind == "table":
+                b_en.cell_translations = [[None] * len(r) for r in b.cells]
+                b_inter.cell_translations = [[None] * len(r) for r in b.cells]
+                for ri, row in enumerate(b.cells):
+                    for ci, cell in enumerate(row):
+                        if HAS_LETTERS_RE.search(cell):
+                            u = Unit(block=b, cell=(ri, ci), source=cell, masked=cell, kept=[], number=f"T.{ri}.{ci}")
+                            self.draft(u, recent[-self.s.context_segments:] or None)
+                            units_all.append(u)
+                            b_en.cell_translations[ri][ci] = u.final
+                            b_inter.cell_translations[ri][ci] = u.final
+
+            elif b.kind == "para":
+                para_no += 1
+                pieces, seg_pos, verse = units_pieces(b.text, segments, para_no, seg_pos)
+                para_units = [Unit(block=b, source=txt, masked=txt, kept=[], number=num, verse=verse) for num, txt in pieces]
+                for u in para_units:
+                    self.progress(f"[{u.number}] {u.source[:60]}{'…' if len(u.source) > 60 else ''}")
+                    self.draft(u, recent[-self.s.context_segments:] or None)
+                    recent.append((modern(u.source), u.final))
+                    units_all.append(u)
+
+                # Format initial interlinear block lines
+                out_inter: list[str] = []
+                for u in para_units:
+                    if out_inter:
+                        out_inter.append("")
+                    out_inter.extend(self.render_group(u, with_translation=not verse))
+                if verse and para_units:
+                    out_inter.append("")
+                    out_inter.extend(f"{u.final}  " for u in para_units[:-1])
+                    out_inter.append(para_units[-1].final)
+                b_inter.kind = "verbatim"
+                b_inter.lines = out_inter
+
+                # Format initial prose block
+                if verse and para_units:
+                    b_en.kind = "verbatim"
+                    b_en.lines = [b_en.prefix + f"{u.final}  " for u in para_units[:-1]] + [b_en.prefix + para_units[-1].final]
+                elif para_units:
+                    b_en.kind = "para"
+                    b_en.translation = " ".join(u.final for u in para_units)
+
+        # Agentic review loop
+        if review and self.s.max_rounds > 0 and units_all:
+            for bi, batch in enumerate(self._batches(units_all), 1):
                 for r in range(1, self.s.max_rounds + 1):
                     self.progress(f"review batch {bi}, round {r} ({len(batch)} segments) …")
                     found = self.review_batch(batch)
                     if not found:
                         break
-        for u in todo:
-            self.cache[self._key(u.masked)] = {"translation": u.current, "source": u.masked}
+
+        # Re-render blocks with any revised translations from review rounds
+        para_groups: dict[int, list[Unit]] = {}
+        for u in units_all:
+            para_groups.setdefault(id(u.block), []).append(u)
+
+        for b, b_en, b_inter in zip(blocks, blocks_en, blocks_inter):
+            bid = id(b)
+            if bid not in para_groups:
+                continue
+            b_units = para_groups[bid]
+            if b.kind in ("heading", "list") and b_units:
+                b_en.translation = b_units[0].final
+                b_inter.translation = b_units[0].final
+            elif b.kind == "table":
+                for u in b_units:
+                    if u.cell is not None:
+                        ri, ci = u.cell
+                        b_en.cell_translations[ri][ci] = u.final
+                        b_inter.cell_translations[ri][ci] = u.final
+            elif b.kind == "para":
+                verse = b_units[0].verse if b_units else False
+                out_inter = []
+                for u in b_units:
+                    if out_inter:
+                        out_inter.append("")
+                    out_inter.extend(self.render_group(u, with_translation=not verse))
+                if verse and b_units:
+                    out_inter.append("")
+                    out_inter.extend(f"{u.final}  " for u in b_units[:-1])
+                    out_inter.append(b_units[-1].final)
+                b_inter.kind = "verbatim"
+                b_inter.lines = out_inter
+
+                if verse and b_units:
+                    b_en.kind = "verbatim"
+                    b_en.lines = [b_en.prefix + f"{u.final}  " for u in b_units[:-1]] + [b_en.prefix + b_units[-1].final]
+                elif b_units:
+                    b_en.kind = "para"
+                    b_en.translation = " ".join(u.final for u in b_units)
+
+        # Save cache
+        for u in units_all:
+            choice_map = {str(i): (t.candidates.index(t.chosen) + 1 if t.chosen and t.candidates and t.chosen in t.candidates else 1)
+                          for i, t in enumerate(u.tokens, 1) if not t.punct}
+            gloss_map = {str(i): t.gloss for i, t in enumerate(u.tokens, 1) if not t.punct}
+            self.cache[self._key(u.source, u.tokens)] = {
+                "choice": choice_map, "gloss": gloss_map, "translation": u.final, "source": u.source
+            }
         self.save_cache()
-        for u in units:
-            if u.cell is not None:
-                ri, ci = u.cell
-                u.block.cell_translations[ri][ci] = u.final
-            else:
-                u.block.translation = u.final
-        return Result(render(blocks), units, time.time() - t0, self.calls)
 
+        if self.calls % getattr(self.s, "metal_cache_interval", 10) == 0:
+            clear_metal_cache()
 
-def _keys(text: str) -> list[str]:
-    from .dpd import tokens, normalise
-    return [normalise(w) for w in tokens(text)]
+        en_md = render(blocks_en)
+        inter_md = render(blocks_inter)
+        return Result(
+            markdown=inter_md if interlinear else en_md,
+            units=units_all,
+            seconds=time.time() - t0,
+            model_calls=self.calls,
+            en_markdown=en_md,
+            interlinear_markdown=inter_md,
+        )

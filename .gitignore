@@ -16,3 +16,14 @@ data/
 .cache/
 out/
 .streamlit/secrets.toml
+*.sentinel
+
+# Local agent and session files (Claude & Gemini / Antigravity)
+CLAUDE.md
+INTRO.md
+README-HANDOFF.md
+.claude/
+GEMINI.md
+AGENTS.md
+.agents/
+.gemini/
