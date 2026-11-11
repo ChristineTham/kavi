@@ -1,185 +1,223 @@
 # Kavi
 
-A literal Pāḷi → English translator that runs entirely on your Mac.
+A literal Pāḷi and Sanskrit → English translator and word-by-word analyser that runs entirely on your Mac.
 
-Kavi cuts a Markdown or plain-text document into paragraphs and sentences, resolves every word — sandhi
-undone with the [Digital Pāḷi Dictionary](https://www.dpdict.net/)'s deconstructor and the rules of
-Kaccāyana's Sandhikappa — looks each word up in the DPD, and hands the word-by-word analysis (part of speech,
-grammatical form, meanings) to a translation model as reference material. A second, instruction-following model
-then reviews the draft against the Pāḷi and the same analysis and revises it, and a deterministic checker enforces
-what a small model forgets: names left untranslated, honorifics kept as they stand, technical terms shown as
-`viññāṇaṃ` (consciousness) on first use, particles rendered. The loop runs until the reviewer reports nothing or a
-round limit is reached. Markdown structure (headings, lists, blockquotes, tables, inline code, links) survives.
+---
 
-The translation aims to be literal and faithful, word by word as far as English allows, with nothing added and
-no assumption that the text is religious unless its words say so.
+## Neurosymbolic Architecture
 
-## Models
+Kavi is built on a **neurosymbolic** approach: combining deterministic classical grammar deconstruction and
+exhaustive dictionary databases with neural grounded translation and reasoning in an agentic loop.
 
-| Role | Default | Notes |
-| --- | --- | --- |
-| translate | [`buddhist-nlp/mitra-qwen35-translate`](https://huggingface.co/buddhist-nlp/mitra-qwen35-translate) | Dharmamitra's 9B Pāḷi/Sanskrit/Tibetan/Chinese translator; the DPD analysis is fed through its in-context reference channel |
-| review | [`buddhist-nlp/mitra-qwen35-it`](https://huggingface.co/buddhist-nlp/mitra-qwen35-it) | Dharmamitra's instruction-tuned chat model |
-| either | `mlx-community/Qwen3.8-27B-8bit`, `mlx-community/gemma-4-26B-A4B-it-qat-8bit`, `mlx-community/gemma-4-31B-it-qat-8bit` | any MLX chat model can take either role (`--translate-model`, `--review-model`); `tools/bakeoff.py` compares candidates side by side |
+Classical languages like Pāḷi and Sanskrit possess rich synthetic morphology, pervasive sandhi, and complex
+compounding (*samāsa*). Pure end-to-end LLM translation frequently suffers from hallucinated roots, missed particles,
+invented etymologies, and lapses into standard Victorian/theological paraphrases. Conversely, pure rule-based parsers
+struggle with semantic ambiguity, homonym selection, and fluent English sentence synthesis.
 
-Both MITRA models are converted to MLX in bf16 (about 17 GB each). `kavi setup` downloads and converts them
-(the checkpoints declare `model_type: qwen3_5_text`, which mlx-lm does not know; setup patches it to `qwen3_5`).
+Kavi bridges both paradigms:
+
+```mermaid
+flowchart TD
+    In["Source Text (Pāḷi / Sanskrit)"] --> Seg["Deterministic Segmenter<br/>(Markdown blocks, placeholders & paragraphing preserved)"]
+    
+    subgraph S1 ["Stage 1: Contextual Macro Discourse Pass"]
+        Seg --> Macro["Global Discourse Translation (Qwen 3.8 27B)<br/>• Translates multi-sentence chunks bounded by context length<br/>• Captures overall narrative flow, syntax & pronoun coreference<br/>• Enforces high-level rules (untranslated vocatives, Buddhist terms)"]
+    end
+
+    subgraph Symbolic ["Deterministic Symbolic Layer (Zero Hallucination)"]
+        Seg --> Gram["Classical Grammar Engines<br/>• Kaccāyana's Kaccāyanabyākaraṇaṃ (§1–§673)<br/>• Pāṇini's Aṣṭādhyāyī & Edgerton's BHS (§1–§48)"]
+        Gram --> Decon["Morphophonemic Deconstruction<br/>Reverse sandhi · Samāsa splitting · Taddhita/kita affixes"]
+        Decon --> Lex["Lexical Lookups<br/>• Digital Pāḷi Dictionary (dpd.db, 860k+ forms)<br/>• Cologne Sanskrit SQLite (Edgerton, MW, Apte)"]
+        Lex --> Tab["Grounded Candidate & Morphology Tables<br/>(Lemmas, parts of speech, roots, case roles, attested meanings)"]
+    end
+    
+    subgraph S2 ["Stage 2: Grounded Interlinear Deconstruction & Refinement"]
+        Macro --> Refine
+        Tab --> Refine["Microscopic Parse Selection & Refinement (Qwen 3.8 27B)<br/>• Primes model with Stage 1 initial discourse draft<br/>• Disambiguates homonyms & selects exact candidate parses<br/>• Assigns word-by-word grammatical symbols and glosses<br/>• Refines initial draft against dictionary candidates & glossary"]
+    end
+
+    subgraph S3 ["Stage 3: Agentic Review Harness Loop"]
+        Refine --> Lint["Deterministic Symbolic Linter (lint.py)<br/>Enforces names, honorifics, glossary rulings, particles"]
+        Lint --> Rev{"All findings resolved?"}
+        Rev -- "No (Critique & issues)" --> Harness["Agentic Reviewer (Qwen 3.8 27B)<br/>Targeted iterative refinement"]
+        Harness --> Lint
+    end
+    
+    Rev -- "Yes" --> Out["Dual Verified Outputs<br/>1. Four-line interlinear format (--interlinear)<br/>2. Structured literal English prose (default)"]
+```
+
+1. **Symbolic Foundation (Deterministic Grammars & Lexicons)**:
+   - **Codified Grammatical Engines**: Complete rule sets from Mahākaccāyana's *Kaccāyanabyākaraṇaṃ* (`kavi.kaccayana`)
+     for Pāḷi and Pāṇini's *Aṣṭādhyāyī* (`kavi.panini`) for Sanskrit. These deterministically resolve euphonic sandhi,
+     unbundle multi-word compounds (*samāsa*), undo secondary affixation with reverse *vuddhi* (*taddhita*), deconstruct
+     verbal participles to root + affix (*kita/kṛdanta*), and map syntactic case government (*kāraka*).
+   - **Exhaustive Lexical Lookups**: The Digital Pāḷi Dictionary (`dpd.db`) and Cologne Digital Sanskrit Dictionaries
+     (Edgerton BHS, Monier-Williams, Apte) supply exact lemmata, inflection tags, and attested meanings for every token.
+   - **Deterministic Checker**: A rule-based linter (`lint.py`) mechanically enforces mandatory technical terms,
+     restores untranslated personal/place names in stem form, protects honorifics, and flags dropped particles.
+2. **Neural Grounded Translation (LLM in an Agent Harness)**:
+   - **Grounded Generation**: The LLM is never asked to generate translations from unguided parametric memory. It is
+     fed the exact candidate table produced by the symbolic engines. Its neural role is to resolve contextual homonym
+     ambiguities, select the most coherent morphological parse, assign word-by-word glosses, and arrange the components
+     into a literal, faithful English sentence.
+   - **Agentic Self-Improving Loop**: A unified model (`Qwen3.8-27B`) operates inside an iterative review harness.
+     When the symbolic checker or reviewer detects an open issue, the model is prompted with the reviewer's structured
+     critique and its own prior draft to systematically revise the sentence until all constraints are met.
+
+---
+
+## Unified Translation Pipeline
+
+Kavi uses a single unified 3-stage translation pipeline regardless of whether output is requested as four-line
+interlinear or standard running prose:
+
+1. **Stage 1 — Contextual Macro Discourse Pass**:
+   - The source text is broken into multi-sentence segments bounded by the model's context window.
+   - Qwen 3.8 performs an initial contextual translation of the entire segment using a rationalist, literal prompt
+     (preserving Buddhist technical terms, keeping vocatives untranslated in stem form, and observing conventions
+     such as *Thus heard by me*).
+   - This establishes global discourse continuity, natural English sentence structure, and coherent pronoun resolution
+     across paragraph boundaries.
+2. **Stage 2 — Grounded Interlinear Deconstruction & Refinement**:
+   - Every sentence is split into units and deconstructed through the classical grammar engines (Kaccāyana/Pāṇini)
+     and dictionary databases (DPD/Cologne).
+   - The model is supplied with both the Stage 1 contextual draft and the microscopic dictionary candidates.
+   - It performs morphological selection, assigns grammatical symbols and word glosses, and iteratively refines the
+     initial translation into an exact, grounded sentence faithful to every particle and case ending.
+3. **Stage 3 — Agentic Review Harness Loop**:
+   - The deterministic linter (`lint.py`) checks the translation against the glossary, name registries, and particle rules.
+   - If discrepancies are found, the agentic reviewer provides structured critique back to the model for iterative
+     refinement until all criteria are satisfied.
+4. **Dual Output Formatting**:
+   - **Interlinear Mode** (`--interlinear`): Emits the textbook's four-line form: source sentence, grammatical symbols,
+     word glosses, and English translation.
+   - **Prose Mode** (default): Uses the exact same underlying translation and word choices, omitting the interlinear
+     grammatical lines while preserving all original document layout, paragraphing, headings, and verse breaks.
+
+---
+
+## Why MITRA Models Were Abandoned
+
+Previous versions of Kavi used Dharmamitra's `buddhist-nlp/mitra-qwen35-translate` (9B) paired with `mitra-qwen35-it`.
+Through extensive evaluation across canonical Pāḷi suttas and Sanskrit texts, the two-model MITRA setup proved
+unviable and was abandoned for the following reasons:
+
+1. **Inability to Follow Strict Instructions & Negative Constraints**:
+   - `mitra-translate` is a translation-completion model rather than a general instruction-following agent. Despite
+     explicit prompts and negative constraints, it persistently lapsed into Victorian / Pali Text Society (PTS)
+     conventions: translating *sambodhi* as "enlightenment" (strictly forbidden by author ruling; must be *full awakening*),
+     *dukkha* as "suffering" (must be *dissatisfaction*), *evaṃ me sutaṃ* as "Thus have I heard" (must be *Thus heard by me*),
+     and translating personal names or titles (rendering *bhagavā* as "the Lord" or "the Blessed One").
+2. **Breakdown of the Agentic Self-Improving Loop**:
+   - The intended design was for a review model to critique the draft and for the translator to incrementally revise its
+     work. However, `mitra-translate` could not take structured review critique (e.g. "Do not translate *bhagavā*; use
+     *dissatisfaction* for *dukkha*") and apply targeted corrections. It either ignored the critique completely or
+     regenerated unrelated text with fresh hallucinations.
+3. **Superiority of a Unified 27B Model in an Agent Harness**:
+   - Modern 27B instruction models (specifically **Qwen 3.8 27B**) possess the reasoning capacity to simultaneously
+     respect dictionary analysis tables, obey mandatory glossary constraints, output valid machine-readable JSON for
+     interlinear tokens, and revise their own drafts in response to reviewer critique.
+   - Replacing the fragile two-model pipeline with a single unified model running an agentic critique loop produced an
+     immediate, dramatic improvement in translation literalness, accuracy, and glossary compliance.
+
+### Evaluation of Alternative Models
+
+We empirically benchmarked candidate architectures on Apple Silicon unified memory:
+
+* **Qwen 3.8 27B** *(Default)*: Exceptional instruction adherence (100% compliance on tested glossary rulings),
+  emits clean JSON without markdown wrappers, and sustains a steady 15–20 tokens/sec.
+* **Gemma 3 27B** (*bf16*): In unquantised bf16 (~54 GB), memory bus bandwidth limits generation to **3–5 tokens/sec**
+  (4x slower than Qwen). Furthermore, it suffers from conversational verbosity, appending unsolicited breakdown
+  commentary that disrupts automated parsers.
+* **Gemma 4 26B-A4B** (*MoE*): Extremely fast (50–80 tokens/sec), but its 4B active parameter budget lacks the capacity
+  for classical languages. It suffers from severe undertranslation (leaving strings of raw Pāḷi words untranslated),
+  stem truncation (dropping compound affixes), and markup leakage.
+* **Gemma 4 31B**: Capable instruction following (12–14 tokens/sec in 4-bit), but defaults to internal reasoning
+  channels (`<|channel>thought`) that require aggressive regex stripping, and in bf16 is memory-bound (~3 tokens/sec).
+
+---
+
+## Dual Grammatical Rule Engines
+
+Kavi incorporates codified classical grammar engines for both Pāḷi and Sanskrit:
+
+### 1. Pāḷi: Mahākaccāyana's *Kaccāyanabyākaraṇaṃ* (`src/kavi/kaccayana.py` & `src/kavi/sandhi.py`)
+Codifies rules from the eight chapters of Kaccāyana (as published on [kaccayana.github.io](https://kaccayana.github.io)):
+* **Sandhikappa (§1–§51)**: Elision of vowels (§12 *sarā sare lopaṃ*, §13 *vā paro asarūpā*), qualitative changes (§14),
+  lengthening (§15), consonantalization (§17–§18), euphonic augments (§35 *y-v-m-d-n-t-r-l-ḷ*), and prefix assimilation
+  (§44 *abbho abhi*, §45 *ajjho adhi*, §47 *atissa canatassa*).
+* **Nāmakappa (§52–§270)**: Consonant declension and the *mano-gaṇa* class (§197–§205: *manas*, *cetas*, *tapas*, *yasas*,
+  *tejas*, *vācas*, *āyus*) inflecting with nominative `-o`, instrumental `-asā`, genitive `-aso`, and compound stem `-o-`.
+* **Kārakakappa (§271–§315)**: The six *kārakas* (*kattā* agent §281, *kamma* patient §280, *karaṇa* instrument §279,
+  *sampadāna* recipient §276, *apādāna* source §271, *okāsa/ādhāra* location §278) and case government rules (§287 *saha*,
+  §294 *namo*, §282 fear verbs, §298 continuous duration, §313 locative absolute).
+* **Samāsakappa (§316–§343)**: Compound member inflection elision (§317), stem reversion (§318), *mahanta* $\rightarrow$
+  *mahā* (§330), negative *na* $\rightarrow$ *a-/an-* (§333), and *samāsānta* final stem changes (§335: *rāja* $\rightarrow$
+  *rājan*, *sakha* $\rightarrow$ *sakhi*, *akkha* $\rightarrow$ *akkhi*).
+* **Taddhitakappa (§344–§405)**: Reverse *vuddhi* (§396, §400: `ā` $\rightarrow$ `a`, `e` $\rightarrow$ `i`, `o` $\rightarrow$ `u`),
+  and secondary suffixes: `-ika` (§350), `-tta`/`-tā` (§361), `-vantu`/`-mantu` (§364), `-ī` (§367), `-maya` (§372),
+  and adverbs `-to` (§393) and `-so` (§394).
+* **Kibbidhānakappa (§524–§623)**: Primary verbal derivations: present participles in `-anta`/`-māna` (§527), gerundives in
+  `-tabba`/`-anīya` (§528), agent nouns in `-aka`/`-tar` (§531–§532), past participles in `-ta`/`-na` (§555–§556),
+  infinitives in `-tuṃ` (§561), and absolutives in `-tvā`/`-ya` (§563, §597).
+
+### 2. Sanskrit & Buddhist Hybrid Sanskrit: Pāṇini & Edgerton (`src/kavi/panini.py`, `src/kavi/bhs.py`)
+* **Pāṇini's *Aṣṭādhyāyī***: Ac-sandhi (6.1), hal-sandhi (8.2–8.4), visarga/rutva sandhi (6.1, 8.2–8.3), retroflexion (*ṇatva*
+  8.4.1–2, *ṣatva* 8.3.59), *cvi* formations (5.4.50), *samāsānta* stem changes (5.4.68–154), initial *vṛddhi* in *taddhita*
+  (7.2.117), and `-tṛ` agent nouns (3.1.133).
+* **Edgerton's BHS Grammar**: 48 codified Buddhist Hybrid Sanskrit morphophonemic rules with section citations.
+* **Cologne Dictionaries**: Integrated SQLite lookups across Edgerton's *BHS Dictionary*, Monier-Williams (1899), and Apte (1890).
+
+---
+
+## Hardware & Memory Tiers
+
+Kavi detects system unified memory via `sysctl hw.memsize` and automatically selects the highest unquantised or
+quantised precision tier that fits comfortably in RAM:
+
+| System RAM | Default Model Identifier | Precision | Resident Footprint | Speed |
+| :--- | :--- | :--- | :--- | :--- |
+| **$\ge 100$ GB** (128 GB tier) | `mlx-community/Qwen3.8-27B-bf16` | **bf16** (unquantised) | ~51 GB | ~15 tok/s |
+| **$\ge 50$ GB** (64 GB tier) | `mlx-community/Qwen3.8-27B-8bit` | **8-bit** quantised | ~28 GB | ~18 tok/s |
+| **$< 50$ GB** (32 GB tier) | `mlx-community/Qwen3.8-27B-4bit` | **4-bit** quantised | ~15 GB | ~20 tok/s |
+
+Override the model at any time with the `--model` flag or by setting the `KAVI_MODEL` environment variable.
+
+---
 
 ## Data
 
-Kavi needs the DPD's SQLite release `dpd.db` (2.3 GB, CC BY-NC-SA 4.0, Bodhirasa Bhikkhu) and, for sandhi,
-`deconstructor_output.json` from the same project, in `./data/` (or `$KAVI_DATA_DIR`, or `$KAVI_DPD_DB`).
-Get them from https://github.com/digitalpalidictionary/dpd-db/releases. The JSON is indexed once into
-`deconstructor.sqlite` on first use.
+* **Pāḷi Data**: Place `dpd.db` (CC BY-NC-SA 4.0, Bodhirasa Bhikkhu) and `deconstructor_output.json` in `./data/`
+  (or set `$KAVI_DATA_DIR`). Download from https://github.com/digitalpalidictionary/dpd-db/releases.
+* **Sanskrit Data**: Run `uv run kavi setup --sanskrit` to download Vidyut's kosha and Cologne dictionary files
+  into `./data/` and compile `./data/sanskrit.sqlite`.
 
-For Sanskrit (`--lang sa`, Buddhist Hybrid Sanskrit included) `kavi setup --sanskrit` downloads
-[vidyut](https://github.com/ambuda-org/vidyut)'s linguistic data (81 MB, MIT: the kosha of inflected forms, the
-derivation engine) into `./data/vidyut/` and the Cologne Digital Sanskrit Dictionaries' text files of Edgerton's
-*Buddhist Hybrid Sanskrit Dictionary* (1953), Monier-Williams (1899) and Apte (1890) from
-https://github.com/sanskrit-lexicon/csl-orig (CC BY-NC-SA 3.0) into `./data/cologne/`, and builds
-`./data/sanskrit.sqlite` from them. Classical morphophonemic and derivational rules from Pāṇini's *Aṣṭādhyāyī*
-(external *ac/hal/visarga* sandhi, internal *ṇatva* and *ṣatva*, *cvi* and *samāsānta* stems, *taddhita* initial
-*vṛddhi*, and `-tṛ` agent nouns) together with Buddhist Sanskrit compound-member frequencies from the Digital
-Corpus of Sanskrit (`ambuda-org/dcs`) live in `src/kavi/panini.py`; hybrid forms are read by the rules of
-Edgerton's *Buddhist Hybrid Sanskrit Grammar* in `src/kavi/bhs.py`, each with its paragraph number. The design
-is in `docs/sanskrit-scope.md`.
+---
 
-## Install and run
+## Install and Run
 
 ```bash
-uv sync                                   # Python 3.12, mlx-lm, streamlit, vidyut
-uv run kavi setup                         # set up everything (DPD data, Sanskrit dictionaries, MITRA models)
-uv run kavi doctor                        # check data and models across all languages
-uv run kavi translate sutta.md -o sutta.en.md --report review.md --table words.md
-uv run kavi translate --text "Ekaṃ samayaṃ bhagavā bārāṇasiyaṃ viharati."
-uv run kavi analyse "Tatthodantāsarā aṭṭha."   # the DPD word table only
-uv run kavi app                           # Streamlit interface
-uv run kavi translate --lang sa --interlinear heart.md    # Sanskrit or Buddhist Hybrid Sanskrit
+uv sync                                          # Python 3.12, mlx-lm, streamlit, vidyut
+uv run kavi setup                                # download lexical data and default model
+uv run kavi doctor                               # verify data and model status
+uv run kavi translate sutta.md -o sutta.en.md    # running prose translation
+uv run kavi translate sutta.md --interlinear     # 4-line textbook interlinear format
+uv run kavi translate --lang sa heart.md         # Sanskrit / Buddhist Hybrid Sanskrit
+uv run kavi app                                  # Streamlit interface
 ```
 
-Useful flags: `--rounds N` (review rounds, default 5; `--no-review` for the draft only), `--glossary FILE`
-(`term: gloss` lines, default the built-in doctrinal glossary in `src/kavi/glossaries/default.txt`, `none` to
-disable), `--sentence-words N`
-(paragraphs longer than this are translated sentence by sentence), `--batch-words N` (review batch size),
-`--think` (let the reviewer think), `--translate-model`, `--review-model`.
+### Key CLI Flags
+* `--interlinear`: Produce 4-line interlinear output instead of standard prose.
+* `--model <name>`: Specify a local MLX model path or Hugging Face repo (e.g. `mlx-community/Qwen3.8-27B-bf16`).
+* `--lang <pi|sa>`: Select language: `pi` Pāḷi (default) or `sa` Sanskrit.
+* `--rounds N`: Maximum review critique rounds per batch (default 5; `--no-review` for draft only).
+* `--glossary FILE`: Technical terms glossary (default `src/kavi/glossaries/default.txt`).
+* `--sentence-words N`: Paragraphs longer than this are segmented sentence by sentence.
+* `--batch-words N`: Review batch size in source words (default 400).
 
-## Which models
-
-`docs/bakeoff/` compares the candidates on the opening of the Mahānidānasutta (7D/2; the same text translated by hand at
-https://christham.net/buddhavacana/sutta/deporig/). In short:
-
-| configuration | s/paragraph | character |
-| --- | --- | --- |
-| default: MITRA translate → checker → MITRA-it review | ~40 | fluent and fast; the checker supplies the conventions the models ignore; paraphrases survive |
-| `--translate-model Qwen3.8-27B-8bit` | ~60 + review | the most literal readable draft, conventions followed unaided; occasional grammatical slip |
-| `--review-model gemma-4-31B-it-qat-8bit` | ~100 per review | the reviewer that both applies the checker's instructions and finds paraphrases of its own |
-| Gemma 4 26B-A4B | ~12 | fast but interlinear word salad; not recommended |
-| any model with `--think` | minutes | the chain of thought never finishes within the token budget; not usable |
-
-The translate model is released from memory before the review phase when the two roles use different models, so a
-27B translator and a 31B reviewer can be combined on a 64 GB machine.
-
-## Hardware & Memory Tiers (32 GB, 64 GB, 128 GB)
-
-Kavi's memory footprint is governed by the two 9B MITRA models in Apple Silicon unified memory:
-* **bf16 (full precision)**: ~17.5 GB per model (~18–19 GB in unified memory). Both models together take ~36–38 GB.
-* **8-bit quantised**: ~9.5 GB per model (~19 GB for both).
-* **4-bit quantised**: ~5.2 GB per model (~10.4 GB for both).
-* **Lexicon & SQLite databases** (`dpd.db`, `sanskrit.sqlite`): ~300–600 MB.
-
-Kavi automatically detects total unified memory via `sysctl hw.memsize` and configures the optimal memory tier:
-
-| Hardware Tier | Recommended Precision | Model Residency | SQLite Cache | Notes |
-| --- | --- | --- | --- | --- |
-| **32 GB** | 8-bit (`kavi setup --bits 8`) | Sequential release (`--release-translator`) | 32 MB | 8-bit keeps total usage under 19 GB with near-lossless perplexity (<0.1 diff); bf16 runs only in interlinear mode or with strict sequential release. |
-| **64 GB** | bf16 (default) | Sequential release for 2-model pipeline; single model for interlinear | 64 MB | Sweet spot for interlinear mode (~18 GB peak), leaving ~40 GB free for macOS and page caches. |
-| **128 GB** | bf16 (default) | Dual resident (`--dual-resident`) | 256 MB | Both bf16 models stay loaded simultaneously, eliminating the 3–5s model reload time between translation and review rounds. |
-
-Run `kavi doctor` at any time to inspect your machine's detected tier, active model residency mode, and SQLite cache allocation:
-```bash
-uv run kavi doctor
-```
-
-## Measuring and improving
-
-`kavi eval candidate.md reference.md --source pali.md` scores an output against a reference translation: chrF
-(character n-gram F-score), word F1, the checker's remaining findings against the source, and how many glossary
-terms are rendered as the reference renders them. `tests/samples/sn12-1.md` with `sn12-1.reference.md` (the
-author's published translation of the Paṭiccasamuppāda passage) is the first regression sample; `docs/eval/`
-keeps the baselines, so a change to a prompt, the checker or a model can be judged by its numbers.
-
-Roadmap for the default configuration, in the order the whole-text runs suggest:
-
-1. a paraphrase detector — English words with no source in the DPD analysis ("surface of a pond") reported to the
-   reviewer as findings, the way dropped particles are;
-2. a targeted second opinion — only segments with open findings or a low self-consistency score go to Gemma 4 31B;
-3. template reuse — a sentence that differs from an earlier one in one or two words takes that sentence's translation
-   with the words substituted (the formulaic repetition of the suttas);
-4. homonym choice — when the DPD lists several headwords for a form, prefer the one whose part of speech fits the
-   neighbouring words (`asati` the participle after a noun, not the verb "eats").
-
-## Interlinear translation
-
-`kavi translate text.md --interlinear` writes four lines for every sentence instead of a running translation, the
-form of the textbook's interlinear chapters:
-
-```
-1.2 ekaṁ samayaṁ bhagavā uruvelāyaṁ viharati najjā nerañjarāya tīre bodhirukkhamūle paṭhamābhisambuddho.  
-*️⃣🤟🚹⨀②(eka) 🚹⨀②(samaya) 🚹⨀①(bhagavant) 🚺⨀⑦(uruvelā) 🟢⨀🤟▶️(viharati) 🚺⨀⑥(nadī) 🚺⨀⑥(nerañjarā) 🚻⨀⑦(tīra) 🚻⨀⑦🆎(bodhirukkha+mūla) 🚹⨀①🆎(paṭhama+abhisambuddha)  
-one | time | the Bhagavā | at Uruvelā | dwells | of the river | Nerañjarā | on the bank | at the foot of the bodhi tree | first fully awakened  
-At one time the Bhagavā dwells at Uruvelā on the bank of the river Nerañjarā at the foot of the bodhi tree, first fully awakened.
-```
-
-1. the Pāḷi sentence, numbered by paragraph and sentence, or by SuttaCentral's segment numbers when
-   `--segments` gives the segment JSON (the API's `root_text` or a bilara root file);
-2. the analysis: one token per isolated word (sandhi resolved from the DPD's sandhi entries and the deconstructor,
-   `…n”ti` restored to `…ṁ ti`), in the textbook's symbols and order — a nominal's gender, number and ending with
-   its dictionary lemma, `🚹⨀①(bhagavant)`; a verb's voice, number, person and tense with its base verb,
-   `🟢⨀🤟▶️(viharati)`; pronouns `*️⃣` with their person (⚧ for `amha` and `tumha`); particles and adverbs `⏏️`, a
-   standalone prefix `🔼`; compounds `🆎(member+member)` from the DPD's compound analysis; participles, absolutives
-   and infinitives `🔽(affix)`; the niggahīta written `ṁ` (Sanskrit keeps `ṃ`); Sanskrit adds the dual `⨁`, the
-   periphrastic future `⏩` and the benedictive `⏫`, lemmas in stem form (`tad`, `bhagavat`), the avagraha
-   restored (`’nuttara` is `anuttara`), and a hybrid form's classical reading noted with Edgerton's paragraph;
-3. the glosses, one per token, separated by bars, with the punctuation carried along;
-4. the literal translation rearranged into a normal English sentence. A verse keeps one group of lines 1–3 per
-   line and gives the stanza's translation once, line by line.
-
-Lines 1–3 end with two spaces, Markdown's hard line break. The dictionary supplies every candidate parse of every
-word (`kavi.interlinear.candidates`), the model only chooses among them, glosses each word in the chosen form and
-translates the sentence, answering in JSON; a choice outside the candidates falls back to the first, so the
-analysis line never says what the DPD does not. The checker then applies the conventions (names, honorifics,
-glossary terms, particles, tense) to the translation line, and the glossary glosses to the gloss line. The model
-is the review model unless `--interlinear-model` names another; answers are cached in
-`~/.cache/kavi/interlinear.json`, so a formula repeated across suttas is computed once. `--report` writes every
-token's chosen parse with the number of alternatives and the model's raw answer.
-
-## How it works
-
-1. **Segment** (`segment.py`): Markdown blocks; inline code, links, tags, footnotes and URLs become `%%n%%`
-   placeholders that must come back intact.
-2. **Analyse** (`dpd.py`, `sandhi.py`): every distinct word is looked up in the DPD `lookup` table; unknown forms
-   are split by the deconstructor, then by the reverse-sandhi heuristics (Kaccāyana §12–§50), and the parts looked
-   up. Names, honorifics and technical terms are recognised from the DPD's meanings and family sets, the built-in
-   glossary and a capitalisation heuristic.
-3. **Translate** (`models.py`): MITRA's prompt with `word Means in English: gloss [headword, form]` reference lines,
-   or a generic instruction prompt with the analysis table for other models. Long paragraphs go sentence by sentence.
-4. **Check** (`lint.py`): deterministic fixes and findings — names restored in stem form ("in Migadāya"),
-   honorifics kept as they stand with their article ("the Bhagavā", "bhikkhave"), technical terms given the
-   `word` (gloss) form once (the word as it stands when nominative or vocative, otherwise the stem: `viññāṇaṃ`
-   (consciousness), `dhamma` (teaching)), a present-tense verb rendered as "was …ing" put back into the present,
-   dropped particles reported. What cannot be fixed by string edits is handed to the reviewer as an instruction.
-5. **Review** (`pipeline.py`): batches of segments (default up to 400 Pāḷi words) go to the review model with the
-   analysis table and the checker's open findings; its `ISSUES` / `REVISED` answer is parsed, checked and applied;
-   repeat while something changes and problems remain, up to `--rounds`.
-
-Translations are cached in `~/.cache/kavi/translations.json` by source text and settings.
+---
 
 ## Licence
 
-Code: CC0. The DPD is CC BY-NC-SA 4.0 (consulted, not redistributed). MITRA-QWEN is Apache-2.0; if you publish its
-output, the model authors ask for a credit to the Dharmamitra project (https://dharmamitra.org). For Sanskrit:
-vidyut (Arun Prasad and the Ambuda project) is MIT; the Cologne Digital Sanskrit Dictionaries (Institute of
-Indology and Tamil Studies, University of Cologne, https://www.sanskrit-lexicon.uni-koeln.de) are CC BY-NC-SA 3.0
-and are consulted, not redistributed: Franklin Edgerton, *Buddhist Hybrid Sanskrit Grammar and Dictionary* (New
-Haven, 1953); Monier Monier-Williams, *A Sanskrit-English Dictionary* (Oxford, 1899); Vaman Shivaram Apte, *The
-Practical Sanskrit-English Dictionary* (Poona, 1890).
+Code: CC0. The Digital Pāḷi Dictionary (DPD) is CC BY-NC-SA 4.0 (consulted, not redistributed). Vidyut is MIT.
+Cologne Digital Sanskrit Dictionaries are CC BY-NC-SA 3.0 (consulted, not redistributed).

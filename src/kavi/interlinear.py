@@ -449,8 +449,10 @@ def format_mantra(src: str, tr: str) -> str:
     return f"{intro}{mantra} ({content})."
 
 
-def prompt_for(unit_text: str, tokens: list[Token], glossary: dict[str, str], context: list[tuple[str, str]]) -> str:
+def prompt_for(unit_text: str, tokens: list[Token], glossary: dict[str, str], context: list[tuple[str, str]], initial_draft: str = "") -> str:
     lines = [f"Sentence: {unit_text}"]
+    if initial_draft:
+        lines.append(f"\nInitial draft translation from discourse context:\n\"{initial_draft}\"")
     if context:
         lines.append("\nPreceding sentences and their translations (keep their renderings for the words and formulas they share with this sentence):")
         lines.extend(f"- {s}\n  → {t}" for s, t in context)
@@ -477,8 +479,11 @@ def prompt_for(unit_text: str, tokens: list[Token], glossary: dict[str, str], co
         ])
     else:
         rules.append(f"Names stay in their {LANGUAGE['name']} stem form; honorifics and titles stay as they stand in the text (Bhagavā, bhikkhave, bhante).")
-    rules.append(f"The translation renders every word of the sentence, keeps a present-tense verb in the present, is rearranged into a normal English sentence, and adds nothing that the {LANGUAGE['name']} does not say.")
-    if used:
+    if initial_draft:
+        rules.append(f"Refine the initial draft translation into the final literal sentence, correcting any errors against the dictionary candidates and glossary ({'; '.join(used)} if present), rendering every word and particle, and aligning with the chosen dictionary parses.")
+    else:
+        rules.append(f"The translation renders every word of the sentence, keeps a present-tense verb in the present, is rearranged into a normal English sentence, and adds nothing that the {LANGUAGE['name']} does not say.")
+    if used and not initial_draft:
         rules.append("These technical terms take these glosses: " + "; ".join(used) + ".")
     lines.append("\nRules:")
     lines.extend(f"{i}. {r}" for i, r in enumerate(rules, 1))

@@ -339,7 +339,9 @@ class DPD:
             res.note = "; ".join(notes)
             splits = [(s, "lookup") for s in (json.loads(row["deconstructor"]) if row["deconstructor"] else [])]
         if row is None or not res.headwords:
-            hids = self.headwords_by_lemma(key)
+            from .kaccayana import MANOGANA_LEMMAS
+            mg_lemma = MANOGANA_LEMMAS.get(key)
+            hids = self.headwords_by_lemma(mg_lemma if mg_lemma else key)
             if hids:
                 fake = {"headwords": json.dumps(hids), "grammar": "", "lookup_key": key}
                 res.found = True
@@ -347,8 +349,12 @@ class DPD:
                 res.headwords = self._headwords(fake, key, mid_capital)
         if depth == 0 and not res.headwords:
             from .sandhi import lengthened_variant, rank_splits, split as sandhi_split
+            from .kaccayana import undo_taddhita_pali
             if not splits:
                 splits = [(s, "deconstructor") for s in self.deconstruct(key)]
+                for prop in undo_taddhita_pali(key):
+                    if self.known(prop.base):
+                        splits.append((f"{prop.base} + {prop.suffix.lstrip('-')}", f"taddhita ({prop.rule})"))
             ours = [(" + ".join(parts), "sandhi") for parts in sandhi_split(key, self.known, self.frequency)]
             sources = {s: src for s, src in ours}
             sources.update({s: src for s, src in splits})          # the DPD's own split keeps its label

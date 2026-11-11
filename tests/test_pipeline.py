@@ -83,3 +83,25 @@ def test_agentic_loop_with_instruction_model(dpd, tmp_path):
     assert "āyasmā" in out
     # Verify that the translator model was invoked for revision via the harness
     assert any("Revise the translation" in c[-1]["content"] for c in translate.calls)
+
+
+def test_contextual_macro_pass_and_interlinear_refinement(dpd, tmp_path):
+    text = "Ekaṃ samayaṃ bhagavā sāvatthiyaṃ viharati. Tatra kho bhagavā bhikkhū āmantesi.\n"
+    translate = FakeModel("Qwen3.8-27B-bf16", [
+        ("Translate the following", "[1] At one time the Bhagavā was dwelling at Sāvatthī.\n[2] There indeed the Bhagavā addressed the monks."),
+        ("Sentence: Ekaṃ samayaṃ", '{"words": [{"n": 1, "parse": 1, "gloss": "one"}, {"n": 2, "parse": 1, "gloss": "time"}], "translation": "At one time the Bhagavā was dwelling at Sāvatthī."}'),
+        ("Sentence: Tatra kho", '{"words": [{"n": 1, "parse": 1, "gloss": "there"}, {"n": 2, "parse": 1, "gloss": "indeed"}], "translation": "There indeed the Bhagavā addressed the monks."}'),
+    ])
+    review = FakeModel("Qwen3.8-27B-bf16", [])
+    st = Settings()
+    st.max_rounds = 0
+    st.cache_dir = tmp_path
+    tr = Translator(st, dpd, FakePool(translate, review), progress=lambda m: None, use_cache=False)
+    result = tr.translate_markdown(text)
+    assert len(result.units) == 2
+    # Verify initial contextual draft was captured across discourse pass
+    assert result.units[0].initial_draft == "At one time the Bhagavā was dwelling at Sāvatthī."
+    assert result.units[1].initial_draft == "There indeed the Bhagavā addressed the monks."
+    # Verify that prompt_for passed initial draft to the unit-level refinement call
+    unit_prompts = [c[-1]["content"] for c in translate.calls if "Sentence: " in c[-1]["content"]]
+    assert any("Initial draft translation from discourse context:" in p for p in unit_prompts)

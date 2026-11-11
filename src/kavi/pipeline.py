@@ -73,6 +73,7 @@ class Unit:
     analyses_override: list[Analysis] | None = None
     draft: str = ""
     current: str = ""
+    initial_draft: str = ""
     rounds: list[Round] = field(default_factory=list)
     from_cache: bool = False
     rejected: list[str] = field(default_factory=list)
@@ -331,7 +332,7 @@ class Translator:
             return
 
         model = self.models.get("translate")
-        user_prompt = prompt_for(unit.source, unit.tokens, self.s.glossary_map, context or [])
+        user_prompt = prompt_for(unit.source, unit.tokens, self.s.glossary_map, context or [], initial_draft=unit.initial_draft)
         no_word_prompt = user_prompt.replace(
             'repeating the word, in this form: {"words": [{"n": 1, "word": "evaṁ", "parse": 1, "gloss": "thus"}, {"n": 2, "word": "me", "parse": 3, "gloss": "by me"}], "translation": "…"}',
             'in this form: {"words": [{"n": 1, "parse": 1, "gloss": "thus"}, {"n": 2, "parse": 3, "gloss": "by me"}], "translation": "…"}',
@@ -353,6 +354,8 @@ class Translator:
             if not translation and not choice and reply.text.strip():
                 # Fallback for models or mocks returning plain translation text
                 translation = strip_wrapper(reply.text)
+            elif not translation and unit.initial_draft:
+                translation = unit.initial_draft
             if (gloss or not unit.tokens) and translation:
                 break
         self._apply(unit, choice, gloss, translation)
@@ -477,6 +480,80 @@ class Translator:
             batches.append(cur)
         return batches
 
+    @staticmethod
+    def _parse_numbered_translations(text: str, n_expected: int) -> dict[int, str]:
+        out: dict[int, str] = {}
+        for line in text.strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            m = re.match(r"^\[?(\d+)\]?[\.:\s\-]+(.*)$", line)
+            if m:
+                idx = int(m.group(1))
+                val = m.group(2).strip()
+                if val:
+                    out[idx] = val
+            elif out:
+                last_idx = max(out.keys())
+                out[last_idx] += " " + line
+        return out
+
+    def _contextual_macro_pass(self, units: list[Unit]) -> None:
+        """Initial macro pass: translate the text in context-bounded chunks to capture
+        narrative flow, discourse coreference, and natural phrasing."""
+        active = [u for u in units if not u.kept_source and u.source.strip()]
+        if len(active) <= 1:
+            return
+
+        model = self.models.get("translate")
+        if is_mitra_translate(model.path):
+            return
+
+        # Check if all active units are already cached in interlinear cache
+        uncached = [u for u in active if self._key(u.source, u.tokens if u.tokens else analyse_tokens(self.dpd, u.source)) not in self.cache]
+        if not uncached:
+            return
+
+        # Group into chunks of up to eval_batch_words (default 400 words)
+        chunks: list[list[Unit]] = []
+        cur: list[Unit] = []
+        words = 0
+        for u in active:
+            u_words = len(u.source.split())
+            if cur and words + u_words > self.s.eval_batch_words:
+                chunks.append(cur)
+                cur, words = [], 0
+            cur.append(u)
+            words += u_words
+        if cur:
+            chunks.append(cur)
+
+        self.progress(f"discourse pass: generating initial contextual translation across {len(chunks)} chunk(s) …")
+        for chunk in chunks:
+            source_lines = [f"[{i}] {modern(u.source).strip()}" for i, u in enumerate(chunk, 1)]
+            user_msg = (
+                f"Translate the following {LANGUAGE['name']} text into literal, rationalist English, segment by segment.\n\n"
+                f"Rules:\n"
+                f"1. Literal and rationalist: render every word faithfully and drop no particle; do not assume religious or supernatural meanings.\n"
+                f"2. Leave personal names, place names, and titles untranslated in their {LANGUAGE['name']} stem form (e.g. Bhagavā, Ānanda, Sāvatthī, Jetavana).\n"
+                f"3. Leave vocative forms untranslated (e.g. bhikkhave, bhante, Ānanda).\n"
+                f"4. Retain technical Buddhist terms: use rationalist glosses (paccaya -> cause, dukkha -> dissatisfaction, sambodhi -> full awakening, upādāna -> fuel, khandha -> collection) and never use 'enlightenment' or 'noble truth'.\n"
+                f"5. Formulas: 'evaṃ me sutaṃ' / 'evaṃ mayā śrutam' must be rendered as 'Thus heard by me'.\n"
+                f"6. Output one translated line per numbered segment in the form '[n] Translation text'.\n\n"
+                f"{LANGUAGE['name']} text:\n" + "\n".join(source_lines)
+            )
+            messages = [
+                {"role": "system", "content": f"You are an expert translator of classical {LANGUAGE['name']} Buddhist texts into literal English."},
+                {"role": "user", "content": user_msg}
+            ]
+            max_tokens = min(self.s.max_tokens, max(512, len(chunk) * 128))
+            self.calls += 1
+            reply = model.chat(messages, max_tokens=max_tokens, temperature=self.s.temperature, thinking=self.s.thinking)
+            parsed = self._parse_numbered_translations(reply.text, len(chunk))
+            for i, u in enumerate(chunk, 1):
+                if i in parsed and parsed[i].strip():
+                    u.initial_draft = parsed[i].strip()
+
     # -- document rendering ------------------------------------------------------------
 
     def render_group(self, u: Unit, with_translation: bool = True) -> list[str]:
@@ -498,70 +575,43 @@ class Translator:
         para_no = 0
         recent: list[tuple[str, str]] = []
 
-        for b, b_en, b_inter in zip(blocks, blocks_en, blocks_inter):
+        for b in blocks:
             if not b.translatable or not HAS_LETTERS_RE.search(b.text or " ".join(c for r in b.cells for c in r)):
                 continue
 
             if b.kind == "heading":
                 para_no += 1
                 u = Unit(block=b, source=b.text, masked=b.text, kept=[], number=f"0.{para_no}")
-                self.draft(u, recent[-self.s.context_segments:] or None)
                 units_all.append(u)
-                b_en.translation = u.final
-                b_inter.translation = u.final
 
             elif b.kind == "list":
                 para_no += 1
                 u = Unit(block=b, source=b.text, masked=b.text, kept=[], number=f"L.{para_no}")
-                self.draft(u, recent[-self.s.context_segments:] or None)
                 units_all.append(u)
-                b_en.translation = u.final
-                b_inter.translation = u.final
 
             elif b.kind == "table":
-                b_en.cell_translations = [[None] * len(r) for r in b.cells]
-                b_inter.cell_translations = [[None] * len(r) for r in b.cells]
                 for ri, row in enumerate(b.cells):
                     for ci, cell in enumerate(row):
                         if HAS_LETTERS_RE.search(cell):
                             u = Unit(block=b, cell=(ri, ci), source=cell, masked=cell, kept=[], number=f"T.{ri}.{ci}")
-                            self.draft(u, recent[-self.s.context_segments:] or None)
                             units_all.append(u)
-                            b_en.cell_translations[ri][ci] = u.final
-                            b_inter.cell_translations[ri][ci] = u.final
 
             elif b.kind == "para":
                 para_no += 1
                 pieces, seg_pos, verse = units_pieces(b.text, segments, para_no, seg_pos)
                 para_units = [Unit(block=b, source=txt, masked=txt, kept=[], number=num, verse=verse) for num, txt in pieces]
-                for u in para_units:
-                    self.progress(f"[{u.number}] {u.source[:60]}{'…' if len(u.source) > 60 else ''}")
-                    self.draft(u, recent[-self.s.context_segments:] or None)
-                    recent.append((modern(u.source), u.final))
-                    units_all.append(u)
+                units_all.extend(para_units)
 
-                # Format initial interlinear block lines
-                out_inter: list[str] = []
-                for u in para_units:
-                    if out_inter:
-                        out_inter.append("")
-                    out_inter.extend(self.render_group(u, with_translation=not verse))
-                if verse and para_units:
-                    out_inter.append("")
-                    out_inter.extend(f"{u.final}  " for u in para_units[:-1])
-                    out_inter.append(para_units[-1].final)
-                b_inter.kind = "verbatim"
-                b_inter.lines = out_inter
+        # Stage 1: Initial macro translation pass (discourse context across segments)
+        self._contextual_macro_pass(units_all)
 
-                # Format initial prose block
-                if verse and para_units:
-                    b_en.kind = "verbatim"
-                    b_en.lines = [b_en.prefix + f"{u.final}  " for u in para_units[:-1]] + [b_en.prefix + para_units[-1].final]
-                elif para_units:
-                    b_en.kind = "para"
-                    b_en.translation = " ".join(u.final for u in para_units)
+        # Stage 2: Unit-level dictionary analysis, candidate selection, and translation refinement
+        for u in units_all:
+            self.progress(f"[{u.number}] {u.source[:60]}{'…' if len(u.source) > 60 else ''}")
+            self.draft(u, recent[-self.s.context_segments:] or None)
+            recent.append((modern(u.source), u.final))
 
-        # Agentic review loop
+        # Stage 3: Agentic review loop
         if review and self.s.max_rounds > 0 and units_all:
             for bi, batch in enumerate(self._batches(units_all), 1):
                 for r in range(1, self.s.max_rounds + 1):

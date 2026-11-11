@@ -65,7 +65,12 @@ def _cands(w: str) -> list[tuple[str, str, str]]:
     for i in range(1, n):
         c, prev = w[i], w[i - 1]
         if 2 <= i <= n - 2:
-            add(w[:i], w[i:], "juxtaposition")
+            left, right = w[:i], w[i:]
+            add(left, right, "juxtaposition")
+            from .kaccayana import compound_junction_variants_pali
+            for c_left, c_right in compound_junction_variants_pali(left, right):
+                if (c_left, c_right) != (left, right):
+                    add(c_left, c_right, "samāsa")
         if c in VOWELS and prev not in VOWELS:
             for v in VOWELS:
                 add(w[:i] + v, w[i:], "§12", vowel_rule=True)          # left final elided
