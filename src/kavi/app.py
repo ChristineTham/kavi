@@ -31,11 +31,19 @@ def get_pool(translate_model: str, review_model: str):
     return ModelPool(translate_model, review_model, log=lambda m: None)
 
 
+@st.cache_data(ttl=15, show_spinner=False)
+def current_problems(lang: str, translate_model: str, review_model: str, data_dir: str) -> list[str]:
+    """What is missing, asked of the disk and the model server at most every few seconds, not on every rerun."""
+    s = Settings()
+    s.use_language(lang)
+    return s.check()
+
+
 settings = Settings()
 
 with st.sidebar:
     st.title("📜 Kavi")
-    st.caption("Literal Pāḷi or Sanskrit → English. Dictionary word analysis, a discourse draft grounded word by word, and review. Runs locally under MLX.")
+    st.caption("Literal Pāḷi or Sanskrit → English. Dictionary word analysis, a discourse draft grounded word by word, and review. Runs locally, on Ollama or MLX.")
     language = st.radio("Language", ["Pāḷi", "Sanskrit (and Buddhist Hybrid Sanskrit)"], horizontal=False)
     lang = "sa" if language.startswith("Sanskrit") else "pi"
     settings.use_language(lang)
@@ -49,7 +57,7 @@ with st.sidebar:
         translate_model = st.text_input("Translate model", settings.translate_model)
         review_model = st.text_input("Review model", settings.eval_model)
         st.text(f"vidyut + Cologne: {settings.sanskrit_db}" if lang == "sa" else f"DPD: {settings.dpd_db}")
-        problems = settings.check()
+        problems = current_problems(lang, settings.translate_model, settings.eval_model, str(settings.data_dir))
         if problems:
             for p in problems:
                 st.warning(p)

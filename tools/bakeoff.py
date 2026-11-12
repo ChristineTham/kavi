@@ -34,10 +34,7 @@ def load(path: str) -> MLXModel:
 
 
 def free(model: MLXModel) -> None:
-    import mlx.core as mx
-    del model.model, model.tokenizer
-    gc.collect()
-    mx.clear_cache()
+    model.unload()
 
 
 def main() -> int:

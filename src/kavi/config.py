@@ -6,11 +6,14 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import ollama
+
 HOME = Path.home()
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODELS_DIR = Path(os.environ.get("KAVI_MODELS_DIR", HOME / ".cache" / "mlx-models"))
 
-DEFAULT_MODEL_BASE = "mlx-community/Qwen3.8-27B"
+DEFAULT_MODEL = "gemma4:26b-mlx"                  # served by a local Ollama (ollama.py); the author's choice
+MLX_MODEL_BASE = "mlx-community/Qwen3.8-27B"      # the MLX checkpoints `kavi setup --bits` still fetches
 TRANSLATE_HF = "buddhist-nlp/mitra-qwen35-translate"
 IT_HF = "buddhist-nlp/mitra-qwen35-it"
 TRANSLATE_MLX = "mitra-qwen35-translate-mlx-bf16"
@@ -32,19 +35,17 @@ def system_ram_gb() -> int:
 
 
 def default_model() -> str:
-    """Return default MLX model identifier based on system unified memory.
-    Always use unquantised (bf16) on >= 100 GB RAM (128GB tier), 8-bit on >= 50 GB (64GB tier),
-    and 4-bit on < 50 GB (32GB tier).
-    """
-    env = os.environ.get("KAVI_MODEL")
-    if env:
-        return env
-    ram = system_ram_gb()
-    if ram >= 100:
-        return f"{DEFAULT_MODEL_BASE}-bf16"
-    elif ram >= 50:
-        return f"{DEFAULT_MODEL_BASE}-8bit"
-    return f"{DEFAULT_MODEL_BASE}-4bit"
+    """The model for both roles: ``$KAVI_MODEL``, else the default, the same on every machine."""
+    return os.environ.get("KAVI_MODEL") or DEFAULT_MODEL
+
+
+def model_problem(model: str) -> str | None:
+    """What stands in the way of using this model, on whichever host serves it; None when it is ready."""
+    if ollama.is_ollama(model):
+        return ollama.problem(model)
+    if Path(model).expanduser().exists() or model.startswith(("buddhist-nlp/", "mlx-community/")):
+        return None
+    return f"not found at {model} — run `kavi setup`"
 
 
 def memory_tier() -> str:
@@ -112,6 +113,11 @@ class Settings:
             self.translate_model = os.environ.get("KAVI_TRANSLATE_MODEL", self.model)
         if not self.eval_model:
             self.eval_model = os.environ.get("KAVI_EVAL_MODEL", self.model)
+        self.name_models()
+
+    def name_models(self) -> None:
+        """One spelling per model, so that two roles naming the same model are seen to share it."""
+        self.translate_model, self.eval_model = ollama.canonical(self.translate_model), ollama.canonical(self.eval_model)
 
     def use_language(self, lang: str) -> None:
         """Switch the language; the default glossary follows it unless one was given."""
@@ -193,9 +199,12 @@ class Settings:
             if not self.decon_db.exists() and not self.decon_json.exists():
                 problems.append(f"deconstructor_output.json not found in {self.data_dir} (optional: sandhi splitting "
                                 "then relies on the lookup table and Kaccāyana heuristics alone)")
-        for label, path in (("model", self.model), ("translate model", self.translate_model), ("review model", self.eval_model)):
-            if not path:
+        checked: set[str] = set()
+        for label, path in (("translate model", self.translate_model), ("review model", self.eval_model)):
+            if not path or path in checked:
                 continue
-            if "/" in path and not Path(path).expanduser().exists() and not (path.startswith("buddhist-nlp/") or path.startswith("mlx-community/")):
-                problems.append(f"{label} not found at {path} — run `kavi setup`")
+            checked.add(path)
+            why = model_problem(path)
+            if why:
+                problems.append(f"{label}: {why}")
         return problems

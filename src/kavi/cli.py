@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .config import IT_HF, IT_MLX, MODELS_DIR, TRANSLATE_HF, TRANSLATE_MLX, Settings
+from .config import DEFAULT_MODEL, IT_HF, IT_MLX, MODELS_DIR, TRANSLATE_HF, TRANSLATE_MLX, Settings
 
 
 def _settings(args) -> Settings:
@@ -49,6 +49,7 @@ def _settings(args) -> Settings:
         s.use_language(args.lang)
     if getattr(args, "glossary", None):
         s.glossary = None if args.glossary.lower() == "none" else Path(args.glossary).expanduser()
+    s.name_models()
     return s
 
 
@@ -312,7 +313,7 @@ def cmd_setup_sanskrit(args) -> int:
 
 
 def cmd_setup_models(args) -> int:
-    """Download the unified model checkpoint (default: Qwen-3.8-27B at hardware memory tier's precision)."""
+    """Fetch the model: `ollama pull` for an Ollama name (the default), a Hugging Face snapshot for an MLX one."""
     s = _settings(args)
     if getattr(args, "mitra", False) or getattr(args, "translate_only", False) or getattr(args, "review_only", False):
         from huggingface_hub import snapshot_download
@@ -350,20 +351,25 @@ def cmd_setup_models(args) -> int:
             print(f"  -> {dest}")
         return 0
 
+    from .config import MLX_MODEL_BASE
+    from .ollama import is_ollama, model_name
     model_id = getattr(args, "model", None)
     if not model_id:
         bits = getattr(args, "bits", 0)
-        if bits == 4:
-            model_id = "mlx-community/Qwen3.8-27B-4bit"
-        elif bits == 8:
-            model_id = "mlx-community/Qwen3.8-27B-8bit"
-        else:
-            model_id = s.model
+        model_id = f"{MLX_MODEL_BASE}-{bits}bit" if bits in (4, 8) else s.model   # --bits asks for an MLX checkpoint
 
-    print(f"setting up unified model: {model_id} …")
+    if is_ollama(model_id):
+        print(f"pulling {model_name(model_id)} with Ollama …")
+        try:
+            return subprocess.run(["ollama", "pull", model_name(model_id)]).returncode
+        except FileNotFoundError:
+            sys.stderr.write("! the `ollama` command was not found — install Ollama from https://ollama.com\n")
+            return 1
+
+    print(f"fetching the MLX model {model_id} from Hugging Face …")
     from huggingface_hub import snapshot_download
     snapshot_download(model_id, max_workers=8)
-    print(f"unified model ready: {model_id}")
+    print(f"model ready: {model_id}")
     return 0
 
 
@@ -456,34 +462,24 @@ def cmd_doctor(args) -> int:
                 problems.append(f"sanskrit lookup error: {e}")
 
     print("\nModels:")
-    if s.translate_model == s.eval_model:
-        path = s.model
-        ok = Path(path).expanduser().exists() or path.startswith("buddhist-nlp/") or path.startswith("mlx-community/")
-        print(f"  unified model   : {path} {'OK' if ok else 'MISSING (kavi setup)'}")
-        if not ok:
-            problems.append(f"unified model not found at {path} — run `kavi setup`")
-    else:
-        for label, path in (("translate model", s.translate_model), ("review model", s.eval_model)):
-            ok = Path(path).expanduser().exists() or path.startswith("buddhist-nlp/") or path.startswith("mlx-community/")
-            print(f"  {label:16}: {path} {'OK' if ok else 'MISSING (kavi setup)'}")
-            if not ok:
-                problems.append(f"{label} not found at {path} — run `kavi setup`")
+    from .config import model_problem
+    from .ollama import host as ollama_host, is_ollama
+    same = s.translate_model == s.eval_model
+    for label, path in ((("model", s.translate_model),) if same else (("translate model", s.translate_model), ("review model", s.eval_model))):
+        why = model_problem(path)
+        served = f"Ollama at {ollama_host()}" if is_ollama(path) else "MLX"
+        print(f"  {label:16}: {path} ({served}) {'OK' if not why else 'MISSING'}")
+        if why:
+            problems.append(f"{label}: {why}")
 
     from .config import system_ram_gb, memory_tier
     ram_gb = system_ram_gb()
     tier = memory_tier()
     print(f"\nHardware & Memory:")
     print(f"  system RAM      : {ram_gb} GB unified memory (Tier: {tier})")
-    two = s.translate_model != s.eval_model
+    two = not same
     print(f"  model residency : {'one model for both roles' if not two else 'two models resident together' if not s.release_translator else 'two models, one at a time'}")
     print(f"  sqlite cache    : {s.sqlite_cache_kb // 1024} MB")
-    if tier == "32GB":
-        print("  recommendation  : 32GB tier — consider 8-bit or 4-bit quantisation (`kavi setup --bits 8`)")
-    elif tier == "64GB":
-        print("  recommendation  : 64GB tier — bf16 single/sequential model runs comfortably; 8-bit for instant dual residency")
-    else:
-        print("  recommendation  : 128GB tier — dual bf16 residency enabled (zero reload latency)")
-
     print()
     if problems:
         print("\n".join("! " + p for p in problems))
@@ -534,9 +530,9 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--first-pass", dest="first_pass_out", help="also write the initial discourse macro-pass (first pass reference) to this file")
     t.add_argument("--think", action="store_true", help="let the review model think before answering (slower)")
     t.add_argument("--no-cache", action="store_true", help="ignore and do not write the translation cache")
-    t.add_argument("--model", help="single model to use for both roles (translate and review)")
-    t.add_argument("--translate-model", help="MLX path of the translation model")
-    t.add_argument("--review-model", help="MLX path of the review model")
+    t.add_argument("--model", help=f"single model for both roles: an Ollama name (default {DEFAULT_MODEL}), a local MLX folder or a Hugging Face MLX repo")
+    t.add_argument("--translate-model", help="the translation model (Ollama name or MLX path)")
+    t.add_argument("--review-model", help="the review model (Ollama name or MLX path)")
     t.add_argument("--max-tokens", type=int)
     t.add_argument("--batch-words", type=int, help="review batches up to this many Pāli words")
     t.add_argument("--dual-resident", action="store_true", help="keep two different translate and review models resident together (for >= 128GB Macs)")
@@ -560,9 +556,9 @@ def main(argv: list[str] | None = None) -> int:
 
     st = sub.add_parser("setup", help="download language data and set up models (all by default)")
     common(st)
-    st.add_argument("--model", help="unified model to download/setup (default: Qwen-3.8-27B according to memory tier)")
+    st.add_argument("--model", help=f"model to fetch: an Ollama name (default {DEFAULT_MODEL}) or a Hugging Face MLX repo")
     st.add_argument("--mitra", action="store_true", help="set up legacy MITRA models")
-    st.add_argument("--bits", type=int, default=0, choices=[4, 8, 0], help="quantisation: 0 = bfloat16 (default), 8 or 4 bits")
+    st.add_argument("--bits", type=int, default=0, choices=[4, 8, 0], help="fetch the MLX Qwen 3.8 27B checkpoint at 8 or 4 bits instead of the Ollama default (with --mitra: the quantisation; 0 = bfloat16)")
     st.add_argument("--translate-only", action="store_true")
     st.add_argument("--review-only", action="store_true")
     st.add_argument("--keep-source", action="store_true", help="keep the downloaded bf16 checkpoint or data archives")

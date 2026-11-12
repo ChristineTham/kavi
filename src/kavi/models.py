@@ -1,27 +1,27 @@
-"""The two MITRA-QWEN models under MLX, and the prompts they are given.
+"""The models and the prompts they are given.
 
-* ``mitra-qwen35-translate`` (Dharmamitra, Qwen3.5-9B) does the translation. Its model card fixes the
-  instruction it was trained on and an in-context mode that accepts ``SOURCE Means in English: TRANSLATION``
-  reference lines; the DPD word analysis is supplied in that form.
-* ``mitra-qwen35-it`` reviews the draft against the same analysis and returns a revised translation.
-
-Both run with thinking disabled unless asked, greedy decoding and a small repetition penalty, as the model
-card recommends.
+A model is either loaded here with MLX (``MLXModel``: a local folder or a Hugging Face ``org/repo``) or served by a
+local Ollama (``OllamaModel``: a name with a tag, ``gemma4:26b-mlx``; see ``ollama.py``); both answer ``chat()`` with
+a ``Reply``. ``ModelPool`` hands out one per role, sharing it when the two roles name the same model. The legacy
+MITRA pair (``mitra-qwen35-translate`` with its own instruction, ``mitra-qwen35-it`` as reviewer) still runs through
+the same pool. Thinking is off unless asked; decoding is greedy with a small repetition penalty.
 """
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import ollama
 from .dpd import Analysis, analysis_table, reference_pairs, special_words
 from .language import LANGUAGE
 
 # --------------------------------------------------------------------------------------
-# MLX wrapper
+# The model hosts: MLX in this process, Ollama beside it
 # --------------------------------------------------------------------------------------
 
 
@@ -67,20 +67,103 @@ class MLXModel:
             out.append(r.text)
             finish = r.finish_reason
             n += 1
-            if n >= 16 and "".join(out[-16:]).count("\\u0") >= 4:
+            if _runaway(out):
                 finish = "length"
                 break
-            if len(out) >= 5 and "\nEND" in "".join(out[-5:]):
+            if _ended(out):
                 break
-        text = "".join(out)
-        thought = ""
-        m = re.search(r"<think>(.*?)</think>", text, re.S)
-        if m:
-            thought = m.group(1).strip()
-            text = text[m.end():]
-        elif "</think>" in text:
-            thought, text = text.split("</think>", 1)
-        return Reply(text.strip(), finish, n, time.time() - t0, thought.strip())
+        thought, text = _split_thought("".join(out))
+        return Reply(text, finish, n, time.time() - t0, thought)
+
+
+    def unload(self) -> None:
+        """Free the weights."""
+        import gc
+        del self.model, self.tokenizer
+        gc.collect()
+        clear_metal_cache()
+
+
+def _runaway(out: list[str]) -> bool:
+    """A model stuck emitting \\u0… escapes."""
+    return len(out) >= 16 and "".join(out[-16:]).count("\\u0") >= 4
+
+
+def _ended(out: list[str]) -> bool:
+    """The END line that closes a review answer."""
+    return len(out) >= 5 and "\nEND" in "".join(out[-5:])
+
+
+def _split_thought(text: str) -> tuple[str, str]:
+    """(thinking, answer) of a reply that carries its thinking in <think> tags."""
+    thought = ""
+    m = re.search(r"<think>(.*?)</think>", text, re.S)
+    if m:
+        thought = m.group(1)
+        text = text[m.end():]
+    elif "</think>" in text:
+        thought, text = text.split("</think>", 1)
+    return thought.strip(), text.strip()
+
+
+class OllamaModel:
+    """A model served by a local Ollama, with the interface of ``MLXModel``: the weights live in the server, which
+    loads them on the first request and keeps them while the run lasts."""
+
+    def __init__(self, path: str, log=None):
+        self.path = path
+        self.name = ollama.model_name(path)
+        self._log = log or (lambda msg: sys.stderr.write(msg + "\n"))
+        why = ollama.problem(path)
+        if why:
+            raise RuntimeError(why)
+        try:
+            self._thinks = "thinking" in ollama.call("/api/show", {"model": self.name}).get("capabilities", [])
+        except (OSError, ValueError):
+            self._thinks = False
+        self._log(f"using {self.name} through Ollama at {ollama.host()} …")
+
+    def chat(self, messages: list[dict], max_tokens: int = 2048, temperature: float = 0.0,
+             repetition_penalty: float = 1.05, thinking: bool = False) -> Reply:
+        payload = {"model": self.name, "messages": messages, "stream": True, "keep_alive": ollama.KEEP_ALIVE,
+                   "options": {"num_predict": max_tokens, "temperature": temperature,
+                               "repeat_penalty": repetition_penalty, "num_ctx": ollama.num_ctx()}}
+        if self._thinks:                       # a model that cannot think refuses the field
+            payload["think"] = bool(thinking)
+        out, thought, finish, n = [], [], None, 0
+        t0 = time.time()
+        with ollama.request("/api/chat", payload, timeout=ollama.read_timeout()) as resp:
+            for line in resp:
+                if not line.strip():
+                    continue
+                chunk = json.loads(line)
+                if chunk.get("error"):
+                    raise RuntimeError(f"Ollama: {chunk['error']}")
+                msg = chunk.get("message") or {}
+                if msg.get("thinking"):
+                    thought.append(msg["thinking"])
+                if msg.get("content"):
+                    out.append(msg["content"])
+                    n += 1
+                if chunk.get("done"):
+                    finish = chunk.get("done_reason") or "stop"
+                    n = chunk.get("eval_count") or n
+                    break
+                if _runaway(out):
+                    finish = "length"
+                    break
+                if _ended(out):
+                    finish = "stop"
+                    break
+        tagged, text = _split_thought("".join(out))
+        return Reply(text, finish, n, time.time() - t0, ("".join(thought).strip() or tagged))
+
+    def unload(self) -> None:
+        """Ask the server to free the weights now rather than when its keep-alive runs out."""
+        try:
+            ollama.call("/api/generate", {"model": self.name, "keep_alive": 0}, timeout=30)
+        except (OSError, ValueError):
+            pass
 
 
 def clear_metal_cache() -> None:
@@ -98,29 +181,26 @@ class ModelPool:
     """Loads each model once, on first use."""
 
     def __init__(self, translate_path: str, review_path: str, log=None):
-        self.paths = {"translate": translate_path, "review": review_path}
-        self._models: dict[str, MLXModel] = {}
+        self.paths = {"translate": ollama.canonical(translate_path), "review": ollama.canonical(review_path)}
+        self._models: dict[str, MLXModel | OllamaModel] = {}
         self._log = log
 
-    def get(self, role: str) -> MLXModel:
+    def get(self, role: str) -> MLXModel | OllamaModel:
         if role not in self._models:
             path = self.paths[role]
             if path in [m.path for m in self._models.values()]:
                 self._models[role] = next(m for m in self._models.values() if m.path == path)
             else:
-                self._models[role] = MLXModel(path, self._log)
+                self._models[role] = (OllamaModel if ollama.is_ollama(path) else MLXModel)(path, self._log)
         return self._models[role]
 
     def release(self, role: str) -> None:
-        """Free a model's weights (two 30 GB models will not both fit in memory; the pipeline drops the translator
+        """Free a model's weights (two large models may not both fit in memory; the pipeline drops the translator
         before the review phase when the two roles use different models)."""
         m = self._models.pop(role, None)
         if m is None or m in self._models.values():
             return
-        import gc
-        del m.model, m.tokenizer
-        gc.collect()
-        clear_metal_cache()
+        m.unload()
 
 
 # --------------------------------------------------------------------------------------
