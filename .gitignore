@@ -18,7 +18,7 @@ out/
 .streamlit/secrets.toml
 *.sentinel
 
-# Local agent and session files (Claude & Gemini / Antigravity)
+# Local agent and session files (Claude, Gemini / Antigravity and other coding agents): never committed
 CLAUDE.md
 INTRO.md
 README-HANDOFF.md
@@ -27,3 +27,12 @@ GEMINI.md
 AGENTS.md
 .agents/
 .gemini/
+CLAUDE.local.md
+.antigravity/
+.cursor/
+.cursorrules
+.codex/
+.aider*
+.windsurf/
+.windsurfrules
+.github/copilot-instructions.md
