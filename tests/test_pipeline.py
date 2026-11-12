@@ -60,7 +60,7 @@ def test_offline_loop(dpd, tmp_path):
     unit = result.units[1]
     assert unit.lint and any(f.word == "bhagavā" and f.severity == "fix" for f in unit.lint)
     assert unit.rounds and unit.rounds[0].issues                                     # the reviewer's issue was recorded
-    assert len(review.calls) >= 1 and "Problems already found" not in review.calls[0][-1]["content"] or True
+    assert len(review.calls) >= 1
     assert "Then indeed" in out                                                      # the revision was applied
 
 
@@ -105,3 +105,94 @@ def test_contextual_macro_pass_and_interlinear_refinement(dpd, tmp_path):
     # Verify that prompt_for passed initial draft to the unit-level refinement call
     unit_prompts = [c[-1]["content"] for c in translate.calls if "Sentence: " in c[-1]["content"]]
     assert any("Initial draft translation from discourse context:" in p for p in unit_prompts)
+
+
+def test_128gb_default_model_is_bf16(monkeypatch):
+    from kavi.config import default_model
+    monkeypatch.setattr("kavi.config.system_ram_gb", lambda: 128)
+    monkeypatch.delenv("KAVI_MODEL", raising=False)
+    assert default_model() == "mlx-community/Qwen3.8-27B-bf16"
+
+
+
+def _fake_run(dpd, tmp_path, text, answers, rounds=0, review_answers=()):
+    translate = FakeModel("Qwen3.8-27B-bf16", answers)
+    review = FakeModel("Qwen3.8-27B-bf16", list(review_answers))
+    st = Settings()
+    st.max_rounds = rounds
+    st.cache_dir = tmp_path
+    tr = Translator(st, dpd, FakePool(translate, review), progress=lambda m: None, use_cache=False)
+    return tr.translate_markdown(text), translate, review
+
+
+def test_a_context_dependent_term_is_not_wrapped(dpd, tmp_path):
+    # `dhamma:` has an empty gloss in the glossary: the translator's rendering stands, with no `dhamma` () span
+    text = "Yadā have pātubhavanti dhammā ātāpino jhāyato brāhmaṇassa.\n\nAthassa kaṅkhā vapayanti sabbā.\n"
+    res, _, _ = _fake_run(dpd, tmp_path, text, [
+        ("Translate the following", "[1] When indeed phenomena appear to the ardent brahmin.\n[2] Then all his doubts vanish."),
+        ("Sentence: Yadā have", '{"words": [{"n": 1, "parse": 1, "gloss": "when"}], "translation": "When indeed phenomena appear to the ardent brahmin."}'),
+        ("Sentence: Athassa", '{"words": [{"n": 1, "parse": 1, "gloss": "then"}], "translation": "Then all his doubts vanish."}'),
+    ])
+    assert "()" not in res.en_markdown and res.en_markdown.startswith("When indeed phenomena appear")
+
+
+def test_a_table_is_rendered(dpd, tmp_path):
+    text = "| Pāḷi | x |\n| --- | --- |\n| Namo tassa | y |\n"
+    res, _, _ = _fake_run(dpd, tmp_path, text, [])
+    assert res.en_markdown.count("|") >= 6                       # no IndexError; the table keeps its shape
+
+
+def test_a_gloss_is_not_rewritten_by_a_substring_of_the_key(dpd, tmp_path):
+    # bhava's alternatives (becoming, being) are for the word bhava, not for the verb bhavati
+    text = "Saṅkhārā bhavanti.\n"
+    res, _, _ = _fake_run(dpd, tmp_path, text, [
+        ("Sentence: Saṅkhārā", '{"words": [{"n": 1, "parse": 1, "gloss": "constructions"}, {"n": 2, "parse": 1, "gloss": "come into being"}], "translation": "Mental constructions come into being."}'),
+    ])
+    assert res.units[0].tokens[-1].gloss == "come into being"
+
+
+def test_an_unparsed_answer_is_not_cached(dpd, tmp_path):
+    st = Settings()
+    st.max_rounds = 0
+    st.cache_dir = tmp_path
+    bad = FakeModel("Qwen3.8-27B-bf16", [("Sentence: Namo", "garbage with no json")])
+    tr = Translator(st, dpd, FakePool(bad, bad), progress=lambda m: None)
+    tr.translate_markdown("Namo tassa bhagavato.\n")
+    assert tr.cache == {}
+
+
+def test_other_languages_and_inline_markup_are_left_alone(dpd, tmp_path):
+    text = (':::tip[Info]\nPart of "A Beginner (Non-Linguist) Guide to Learning Pali"\n:::\n\n'
+            'This page is part of the guide; see [the source](https://example.org/a_b) for the details.\n\n'
+            'Akkharāpi akārādayo ekacattālīsaṃ suttantopakārā.\n\n'
+            'Evaṃ me sutaṃ[^1] <span id="x">ekaṃ</span> samayaṃ.\n')
+    res, translate, _ = _fake_run(dpd, tmp_path, text, [
+        ("Translate the following", "[1] The letters too, beginning with a, are forty-one.\n[2] Thus heard by me%%2%% at %%0%%one%%1%% time."),
+        ("Sentence: Akkharāpi", '{"words": [{"n": 1, "parse": 1, "gloss": "letters"}], "translation": "The letters too, beginning with a, are forty-one."}'),
+        ("Sentence: Evaṃ me sutaṃ", '{"words": [{"n": 1, "parse": 1, "gloss": "thus"}], "translation": "Thus heard by me at one time."}'),
+    ])
+    en = res.en_markdown
+    assert [u.source[:9] for u in res.units] == ["Akkharāpi", "Evaṃ me s"]                 # the English blocks are no units
+    assert "see [the source](https://example.org/a_b) for the details." in en and 'Part of "A Beginner' in en
+    assert "forty-one" in en                                                                # a grammar's line is still Pāli
+    assert "[^1]" in en and '<span id="x">' in en and "</span>" in en and "%%" not in en    # lost markers are put back
+    assert not any(t.surface in ("span", "id", "x") for u in res.units for t in u.tokens)
+    sent = [c[-1]["content"] for c in translate.calls if "Sentence: Evaṃ" in c[-1]["content"]][0]
+    assert "Sentence: Evaṃ me sutaṃ%%2%% %%0%%ekaṃ%%1%% samayaṃ." in sent and "placeholder" in sent
+
+
+def test_the_discourse_prompt_takes_its_terms_from_the_glossary(dpd, tmp_path):
+    text = "Avijjāpaccayā saṅkhārā. Dukkhaṃ ariyasaccaṃ.\n"
+    _, translate, _ = _fake_run(dpd, tmp_path, text, [("Translate the following", "[1] x\n[2] y")])
+    prompt = next(c[-1]["content"] for c in translate.calls if "Translate the following" in c[-1]["content"])
+    g = Settings().glossary_map
+    assert f"dukkha -> {g['dukkha']}" in prompt and "saṅkhāra -> mental construction" in prompt
+    assert "Heart" not in prompt and "sarvajña" not in prompt        # no other text's words, no other language's terms
+
+
+def test_the_gate_judges_the_output_not_a_list_of_phrases():
+    from kavi.pipeline import is_strictly_better
+    ok, _ = is_strictly_better("He went to the three realms of existence.", "He went to three realms.", "He went to the three realms.", [], {})
+    assert ok
+    ok, why = is_strictly_better("He [masculine nominative singular] went.", "He went.", "He went.", [], {})
+    assert not ok and "grammatical" in why

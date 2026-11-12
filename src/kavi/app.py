@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from kavi.config import Settings  # noqa: E402
 from kavi.dpd import DPD, analyse_text, analysis_table, special_words  # noqa: E402
+from kavi.language import set_language  # noqa: E402
 
 st.set_page_config(page_title="Kavi — Pāḷi and Sanskrit to English", page_icon="📜", layout="wide")
 
@@ -34,12 +35,11 @@ settings = Settings()
 
 with st.sidebar:
     st.title("📜 Kavi")
-    st.caption("Literal Pāḷi or Sanskrit → English. Dictionary word analysis, MITRA-QWEN translation, instruction-tuned review. Runs locally under MLX.")
+    st.caption("Literal Pāḷi or Sanskrit → English. Dictionary word analysis, a discourse draft grounded word by word, and review. Runs locally under MLX.")
     language = st.radio("Language", ["Pāḷi", "Sanskrit (and Buddhist Hybrid Sanskrit)"], horizontal=False)
     lang = "sa" if language.startswith("Sanskrit") else "pi"
     settings.use_language(lang)
     rounds = st.slider("Review rounds", 0, 5, settings.max_rounds, help="0 = translate only")
-    sentence_words = st.slider("Sentence-by-sentence above (words)", 20, 200, settings.sentence_words)
     batch_words = st.slider("Review batch size (words)", 100, 1200, settings.eval_batch_words, step=50)
     thinking = st.checkbox("Let the reviewer think (slower)", value=settings.thinking)
     use_cache = st.checkbox("Use translation cache", value=True)
@@ -67,6 +67,7 @@ do_translate = col2.button("Translate", type="primary", use_container_width=True
 
 if (do_analyse or do_translate) and text.strip():
     dpd = get_dpd(lang, str(settings.dpd_db), str(settings.decon_db), str(settings.decon_json), str(settings.data_dir))
+    set_language(dpd)                                  # the analysis reads the language record as the translation does
     if do_analyse:
         analyses = analyse_text(dpd, text)
         st.subheader("Word analysis (vidyut and the Cologne dictionaries)" if lang == "sa" else "Word analysis (Digital Pāḷi Dictionary)")
@@ -83,7 +84,7 @@ if (do_analyse or do_translate) and text.strip():
 
         s = Settings()
         s.use_language(lang)
-        s.max_rounds, s.sentence_words, s.eval_batch_words, s.thinking = rounds, sentence_words, batch_words, thinking
+        s.max_rounds, s.eval_batch_words, s.thinking = rounds, batch_words, thinking
         s.translate_model, s.eval_model = translate_model, review_model
         if glossary_text.strip():
             gpath = Path(s.cache_dir) / "streamlit-glossary.txt"

@@ -35,6 +35,19 @@ def test_iter_entries(tmp_path):
     assert [e["k1"] for e in entries] == ["a", "aMSa"] and entries[1]["h"] == "1" and entries[1]["body"] == "body two"
 
 
+def test_join_prefix():
+    from kavi.sanskrit import join_prefix
+    assert join_prefix("adhy", "abhāṣata", "bhāṣate") == "adhibhāṣate"       # the prefix before the augment: its dictionary form
+    assert join_prefix("praty", "abhāṣata", "bhāṣate") == "pratibhāṣate"
+    assert join_prefix("anv", "agacchat", "gacchati") == "anugacchati"
+    assert join_prefix("sam", "agacchat", "gacchati") == "saṃgacchati"
+    assert join_prefix("nir", "akrāmat", "krāmati") == "niṣkrāmati"
+    assert join_prefix("ud", "apatat", "patati") == "utpatati"
+    assert join_prefix("pary", "avāpnuyāt", "avāpnoti") == "paryavāpnoti"   # before a vowel the junction is the text's own
+    assert join_prefix("pari", "tyajati", "tyajati") == "parityajati"
+    assert join_prefix("ni", "ṣikta", "sikta") == "niṣikta"                 # the ṣ the prefix causes stays on the lemma
+
+
 def test_bhs_readings():
     assert ("bhavet", "§ 29.28 optative in -eya") in readings("bhaveya")
     assert any(r[0] == "loke" for r in readings("lokasmiṃ"))
@@ -59,6 +72,10 @@ def test_panini_rules():
     assert "sthitam" in undo_satva("prati", "ṣṭhitam")
     assert "durmanas" in undo_initial_vrddhi("daurmanas")
     assert "loka" in undo_initial_vrddhi("lauka")
+    assert undo_initial_vrddhi("dhārma")[0] == "dharma" and "kṛṣṇa" in undo_initial_vrddhi("kārṣṇa")   # ār: a + r before ṛ
+    assert "nyāya" in undo_initial_vrddhi("naiyāya") and "vyākaraṇa" in undo_initial_vrddhi("vaiyākaraṇa")   # Pāṇini 7.3.3
+    assert "svasti" in undo_initial_vrddhi("sauvasti") and "dvāra" in undo_initial_vrddhi("dauvāra")
+    assert ("yābhiḥ", "jñā") not in external_sandhi_cands("yābhijñā", 5)   # -bhi for -bhiḥ is a reading of an unknown form (bhs.py) only
     assert ("niḥ", "roga") in compound_junction_variants("nī", "roga")
     assert ("mahā", "ṛṣi") in compound_junction_variants("mahar", "ṣi")
     assert ("eka", "bhūta") in compound_junction_variants("ekī", "bhūta")
@@ -152,3 +169,35 @@ def test_lexicon_words():
     assert a.splits[0].parts == ["bhagavān", "āyusmantam", "ānandam", "āmantrayate"]
     a = lx.analyse("pṛthivyaptejovāyvākāśaṛtudhātusamavāyād")
     assert a.headwords[0].construction == "pṛthivī + ap + tejas + vāyu + ākāśa + ṛtu + dhātu + samavāya"
+    # the code review of 2026-11-13: general rules, each checked over the Heart, the Diamond and the Mūlamadhyamakakārikā
+    for form, lemma, prefix in [("adhyabhāṣata", "adhibhāṣate", "adhi"), ("pratyabhāṣata", "pratibhāṣate", "prati"), ("anvagacchat", "anugacchati", "anu")]:
+        h = lx.analyse(form).headwords[0]                            # the prefix in its dictionary form, not adhy-bhāṣate
+        assert h.lemma == lemma and h.pos == "imperf" and f"prefixed {prefix}-" in h.grammar, (form, h.lemma, h.grammar)
+    assert lx.analyse("paryavāpnuyāt").headwords[0].lemma == "paryavāpnoti"
+    for form in ("kimapi", "kamapi"):                                # kim + api: no lemma kaśapi
+        h = lx.analyse(form).headwords[0]
+        assert h.lemma == "kimapi" and h.pos == "pron" and h.construction == "kim + api"
+    for stem in ("daurmanasya", "saumanasya", "rahasya", "phena", "śyena"):   # stems that end like a case form
+        assert lx._nominal(stem), stem
+    assert not lx._nominal("tasmāt") and not lx._nominal("tasya")
+    a = lx.analyse("śokaparidevaduḥkhadaurmanasyopāyāsāḥ")
+    assert a.headwords[0].construction == "śoka + parideva + duḥkha + daurmanasya + upāyāsa"
+    a = lx.analyse("aniruddhaḥ")                                     # the disciple in the masculine singular
+    assert a.headwords[0].kind == "name"
+    a = lx.analyse("aniruddhā")                                      # the Heart Sūtra's anutpannā aniruddhā: the negated participle
+    assert a.headwords[0].kind == "" and a.headwords[0].pos == "pp" and a.headwords[0].construction == "na + niruddha + ta"
+    a = lx.analyse("sumeravaḥ")                                      # a name that is nothing else keeps its plural
+    assert a.headwords[0].kind == "name"
+    for form in ("nagaram", "vihāraḥ", "piṇḍāya"):                   # everyday words are no technical terms
+        assert lx.analyse(form).headwords[0].kind == "", form
+    for form, construction in [("sarvaduḥkhapraśamanaḥ", "sarva + duḥkha + praśamana"), ("buddhacakṣuḥ", "buddha + cakṣus"),
+                               ("mahāpuruṣalakṣaṇaiḥ", "mahā + puruṣa + lakṣaṇa"), ("svaparātmānau", "sva + parātman"),
+                               ("mahānagarīṃ", "mahā + nagarī"), ("anupadhiśeṣe", "na + upadhi + śeṣa"), ("akarmakaḥ", "na + karmaka")]:
+        h = lx.analyse(form).headwords[0]                            # a describing compound keeps its members; a negation is shown
+        assert h.kind == "" and h.construction == construction, (form, h.kind, h.construction)
+    assert lx.analyse("yābhijñā").splits[0].parts == ["yā", "abhijñā"]
+    assert lx.analyse("evātmeti").splits[0].parts == ["eva", "ātmā", "iti"]
+    assert lx.analyse("pātracīvaramādāya").splits[0].parts == ["pātracīvaram", "ādāya"]
+    first = lx._resolve("tathāgatasya")                              # the memoised lookups hand out their own lists
+    first[0].clear()
+    assert lx._resolve("tathāgatasya")[0] and lx._by_model("tathāgatasya") == lx._by_model("tathāgatasya")

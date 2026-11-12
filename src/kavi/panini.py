@@ -61,11 +61,11 @@ DCS_COMP_MEMBERS: set[str] = {
     "kriyā", "krodha", "krīḍā", "kula", "kuśala", "kāla", "kāma", "kāntāra", "kārya", "kāvya", "kāya", "kāṣṭha",
     "kṛpā", "kṣamā", "kṣaya", "kṣaṇa", "kṣetra", "kṣudh", "loka", "lola", "lābha", "mad", "mada", "madana",
     "mahat", "maitra", "mala", "manas", "manuṣya", "maraṇa", "mati", "maṇi", "megha", "mitra", "moha", "mokṣa",
-    "mukha", "muni", "māna", "mārga", "māyā", "māṃsa", "mṛd", "mṛdu", "mṛtyu", "nadī", "naraka",
+    "mukha", "muni", "māna", "mārga", "māyā", "māṃsa", "mṛd", "mṛdu", "mṛtyu", "nadī", "nagara", "nagarī", "naraka",
     "nidrā", "nitya", "niyam", "niyama", "niviś", "nāman", "nṛpa", "ogha", "padma", "pakṣa", "para", "parama",
     "paraspara", "parārtha", "parātman", "pattra", "paṭa", "phala", "pipāsā", "pitta", "pitṛ", "prajñā",
     "prakṛti", "pratyaya", "pratīkāra", "priya", "prīti", "puruṣa", "putra", "puṇya", "puṣpa", "pāda", "pāpa",
-    "pātra", "pīna", "pūjā", "pūrva", "rajas", "rakta", "rakṣaṇa", "rakṣā", "rasa", "asthi", "ratha", "rati",
+    "pātra", "piṇḍa", "piṇḍapāta", "cīvara", "vihāra", "ārāma", "vyākaraṇa", "pīna", "pūjā", "pūrva", "rajas", "rakta", "rakṣaṇa", "rakṣā", "rasa", "asthi", "ratha", "rati",
     "ratna", "rukma", "rūpa", "rāga", "rājan", "saddharma", "sakala", "sama", "sambodhi", "sarva", "sat",
     "satata", "satkāra", "sattva", "satya", "saṃsāra", "smṛti", "sneha", "sthira", "sthāna", "strī", "stuti",
     "sugata", "sukha", "sura", "suvarṇa", "sva", "svabhāva", "svapna", "svarga", "tad", "tala", "tamas", "tap",
@@ -99,12 +99,12 @@ DCS_COMMON_LEMMAS: set[str] = {
     "lola", "lābha", "mad", "mada", "madhya", "mahat", "maitrī", "man", "manas", "manuṣya", "maraṇa", "mati",
     "maya", "megha", "mitra", "moha", "mokṣa", "muc", "muh", "muhur", "mukha", "muni", "māna", "mānasa",
     "mārga", "mātra", "māyā", "māṃsa", "mūla", "mūrdhan", "mṛdu", "mṛtyu", "nadī", "nam", "nanda", "nanu",
-    "nara", "naraka", "naś", "nidrā", "nigrah", "nihan", "nimitta", "nitya", "nityam", "nivāray", "nivṛt",
+    "nagara", "nagarī", "nara", "naraka", "naś", "nidrā", "nigrah", "nihan", "nimitta", "nitya", "nityam", "nivāray", "nivṛt",
     "niyama", "niyatam", "niścaya", "niśāmay", "nāma", "nāraka", "nātha", "nṛpa", "pada", "padma", "pakṣa",
     "para", "parama", "paraspara", "parigraha", "parārtha", "pat", "pathin", "paś", "phala", "pitṛ", "prabhṛti",
     "prajñā", "prajā", "prakṛti", "prasāda", "prasū", "prati", "pratyaya", "pravṛt", "pravṛtti", "praviś",
     "prayoga", "prayā", "praśama", "praṇam", "priya", "priyā", "prāp", "prīti", "punar", "pura", "puruṣa",
-    "putra", "puṇya", "puṣpa", "pāda", "pāpa", "pātra", "pūjay", "pūjā", "pūrva", "pūrvam", "rajas", "rakṣ",
+    "putra", "puṇya", "puṣpa", "pāda", "pāpa", "pātra", "piṇḍa", "piṇḍapāta", "cīvara", "vihāra", "ārāma", "vyākaraṇa", "pūjay", "pūjā", "pūrva", "pūrvam", "rajas", "rakṣ",
     "ram", "rasa", "asthi", "ratha", "rati", "ratna", "ripu", "roga", "rūpa", "rāga", "rājan", "saddharma",
     "sadā", "sadṛśa", "saha", "sama", "sambhava", "sampad", "samyak", "sarva", "sarvatra", "sat", "satatam",
     "sattva", "satya", "saukhya", "saumya", "saṃjñā", "saṃsāra", "saṃvṛti", "sañj", "sev", "sidh", "siddhi",
@@ -180,8 +180,11 @@ def undo_satva(left: str, right: str) -> list[str]:
 
 def undo_initial_vrddhi(stem: str) -> list[str]:
     """Pāṇini 7.2.117 ``taddhiteṣv acām ādeḥ``: undo initial *vṛddhi* (``ā -> a``, ``ai -> i/e``, ``au -> u/o``,
-    ``ār -> ṛ``) to recover the base *prātipadika* of a *taddhita* derivative (``laukika -> loka``,
-    ``dhārmika -> dharma``, ``vaiśāradya -> viśārada``, ``daurmanasya -> durmanas``, ``ādhyātmika -> adhyātma``)."""
+    ``ār -> ar/ṛ``) to recover the base *prātipadika* of a *taddhita* derivative (``laukika -> loka``,
+    ``dhārmika -> dharma``, ``kārṣṇa -> kṛṣṇa``, ``vaiśāradya -> viśārada``, ``daurmanasya -> durmanas``,
+    ``ādhyātmika -> adhyātma``); 7.3.3 ``na yvābhyāṃ padāntābhyāṃ pūrvau tu tābhyām aic``: after the ``y`` or ``v`` of a
+    prefix the vowel is not strengthened, ``ai``/``au`` is put before the semivowel instead (``naiyāyika -> nyāya``,
+    ``vaiyākaraṇa -> vyākaraṇa``, ``sauvastika -> svasti``)."""
     out: list[str] = []
     # Match optional initial consonant cluster before the first vowel
     m = re.match(r"^([^aāiīuūṛṝḷeo]*)(ai|au|ār|ā)(.+)$", stem)
@@ -193,13 +196,16 @@ def undo_initial_vrddhi(stem: str) -> list[str]:
     elif v == "ai":
         out.append(ons + "i" + rest)
         out.append(ons + "e" + rest)
-        if ons.endswith("y") and len(ons) >= 2:                      # naiyāyika -> nyāya, vaiyākaraṇa -> vyākaraṇa
-            out.append(ons + "a" + rest)
+        if ons and rest.startswith("y"):                             # 7.3.3 naiyāyika -> nyāya, vaiyākaraṇa -> vyākaraṇa
+            out.append(ons + rest)
     elif v == "au":
         out.append(ons + "u" + rest)
         out.append(ons + "o" + rest)
+        if ons and rest.startswith("v"):                             # 7.3.3 sauvastika -> svasti, dauvārika -> dvāra
+            out.append(ons + rest)
     elif v == "ār":
-        out.append(ons + "ṛ" + rest)
+        out.append(ons + "ar" + rest)                                # ā -> a before r (dhārmika -> dharma), the commoner case
+        out.append(ons + "ṛ" + rest)                                 # ār -> ṛ (kārṣṇa -> kṛṣṇa)
     return out
 
 

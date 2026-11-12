@@ -186,7 +186,7 @@ class DPD:
         db_path = Path(db_path)
         if not db_path.exists():
             raise FileNotFoundError(f"dpd.db not found at {db_path}")
-        self.con = sqlite3.connect(f"file:{db_path}?immutable=1", uri=True)
+        self.con = sqlite3.connect(f"file:{db_path}?immutable=1", uri=True, check_same_thread=False)
         try:
             self.con.execute(f"PRAGMA cache_size = -{cache_kb}")
             self.con.execute("PRAGMA mmap_size = 2147483648")
@@ -213,7 +213,7 @@ class DPD:
     @staticmethod
     def _open_decon(decon_db: Path | None, decon_json: Path | None):
         if decon_db and decon_db.exists():
-            return sqlite3.connect(f"file:{decon_db}?immutable=1", uri=True)
+            return sqlite3.connect(f"file:{decon_db}?immutable=1", uri=True, check_same_thread=False)
         if decon_json and decon_json.exists():
             target = decon_db or decon_json.with_suffix(".sqlite")
             print(f"indexing {decon_json.name} into {target.name} (once) …", file=sys.stderr)
@@ -224,7 +224,7 @@ class DPD:
                             ((k, json.dumps(v, ensure_ascii=False)) for k, v in data.items()))
             con.commit()
             con.close()
-            return sqlite3.connect(f"file:{target}?immutable=1", uri=True)
+            return sqlite3.connect(f"file:{target}?immutable=1", uri=True, check_same_thread=False)
         return None
 
     def lookup(self, key: str):

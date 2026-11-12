@@ -17,21 +17,21 @@ bhava: existence | becoming, being, state of being
 jāti: birth
 punarbhava: appearing again | rebirth, renewed existence, future life, future existence, re-becoming, being born again
 jarāmaraṇa: ageing and death | aging and death, old age and death, old-age-and-death, decay and death
-duḥkha: suffering
+duḥkha: dissatisfaction | suffering
 daurmanasya: displeasure
 upāyāsa: despair
-duḥkhaskandha: mass of suffering
+duḥkhaskandha: collection of dissatisfaction | mass of suffering, aggregate of suffering
 nirodha: cessation
 samudaya: origin | arising
 nirvāṇa: extinguishment
-niṣṭhanirvāṇa: ultimate extinguishment (of suffering) | ultimate extinguishment
+niṣṭhanirvāṇa: final extinguishment | ultimate extinguishment
 dharma:    # principle, characteristic, phenomenon, teaching by context
 karman: action
 skandha: collection | aggregate, heap
 upādānaskandha: collection of fuel | aggregate of clinging, aggregate of grasping, aggregate of attachment
 dhyāna: mental disposition | meditative absorption, absorption, contemplative state, meditation, trance
 samādhi: focus | concentration
-prajñā: wisdom
+prajñā: wisdom | insight, discernment
 śīla: virtue | morality
 smṛti: awareness | mindfulness
 āsrava: defilement | influx, taint, canker
@@ -103,14 +103,14 @@ puṇya: merit
 puṇyaskandha: mass of merit | heap of merit
 puṇyābhisaṃskāra: meritorious mental construction | meritorious formation, meritorious action
 abhisaṃskāra: mental construction | volitional formation, formation
-kuśalamūla: root of merit | roots of merit
-kalyāṇamitra: spiritual friend | virtuous friend, spiritual guide
-dharmabhāṇaka: dharma preacher | preacher of the doctrine, dharma-preacher, preacher of dharma
-saddharma: true dharma | true teaching, true doctrine, good dharma
+kuśalamūla: root of wholesome merit | root of merit, wholesome root
+kalyāṇamitra: spiritual friend | spiritual benefactor
+dharmabhāṇaka: Dharma reciter | dharma preacher, preacher of the doctrine
+saddharma: True Dharma | true teaching, true doctrine, good dharma
 cakravartin: universal monarch | wheel-turning king, emperor
-gāthā: verse | verses, stanza, stanzas
+gāthā: verse | stanza
 karmaskandha: mass of actions | collection of actions, heap of karma
-piṇḍapāta: alms-food | alms food, food given as alms
+piṇḍapāta: alms-food | alms food, alms
 ātmabhāva: bodily form | individual existence, person
 deyadharma: religious gift | gift, offering
 dharmaparyāya: method of teaching | discourse on the Dharma, dharma discourse
@@ -143,8 +143,6 @@ saṃbhava: coming to be | becoming, origination, arising
 vibhava: passing away | destruction, dissolution, non-becoming
 saṃskṛta: constructed | conditioned, compounded, composite
 asaṃskṛta: unconstructed | unconditioned, uncompounded
-āryasatya: realisation | noble truth, pure truth
-ārya: liberated | noble, pure, holy
 saṃvṛti: convention | conventional, concealment, relative
 paramārtha: ultimate | ultimate truth, absolute, highest meaning
 prapañca: proliferation | conceptual proliferation, conceptual elaboration, verbal proliferation, diffuseness
@@ -179,6 +177,8 @@ vyavahāra: convention | conventional usage, everyday practice, transaction
 loka: world
 sukha: happiness | pleasure, ease, bliss
 jñāna: knowledge | cognition, gnosis
-prajñā: wisdom | insight, discernment
 buddha: Buddha | awakened one, enlightened one
 dvādaśāṅga: twelve links | twelve limbs, twelve factors
+piṇḍapātika: alms-food collector | alms-collector
+śikya: carrying sling | bowl swing, swing
+cakrikā: bowl stand | bowl ring, ring, wheel

@@ -150,3 +150,8 @@ def test_decompose_kitaka():
     # §563 Tvā
     p = decompose_kitaka_pali("katvā")
     assert any(x.suffix == "-tvā" for x in p)
+
+
+def test_taddhita_endings_of_two_letters_are_stripped():
+    from kavi.kaccayana import undo_taddhita_pali
+    assert any(p.base == "guṇa" for p in undo_taddhita_pali("guṇavantaṃ"))

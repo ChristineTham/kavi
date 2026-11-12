@@ -248,13 +248,17 @@ def translate_messages_revision(source: str, analyses: list[Analysis], current_t
     honorifics = sorted({r for _, r in specials.get("honorific", [])})
     terms = sorted({r for _, r in specials.get("technical", [])} | set(extra_terms or []))
     rules = [
+        "Refinement, not replacement: Refine the previous draft translation, addressing the issues below without discarding the draft's natural English fluency and sentence structure.",
+        "Ordinary words are translated into plain English, never left in " + LANGUAGE["name"] + " or given a gloss in parentheses.",
         "Address and fix EVERY issue identified by the reviewer below.",
         "Render every word; drop no particle (ca, vā, pi, eva, hi, kho, pana, iti are all rendered).",
         "Leave personal names, place names and titles of texts untranslated in their stem form" + (": " + ", ".join(names) if names else "") + ".",
         "Leave honorifics and titles of persons untranslated exactly as they stand in the text" + (": " + ", ".join(honorifics) if honorifics else "") + ".",
         "Where a word is used as a technical term, keep it as it stands in the text in backticks with a short English "
-        "gloss in parentheses on its first occurrence, like `viññāṇaṃ` (consciousness), and use the plain gloss afterwards"
+        "gloss in parentheses on its first occurrence, like `term` (gloss), and use the plain "
+        + ("term" if LANGUAGE["code"] == "sa" else "gloss") + " afterwards"
         + ("; candidates in this text: " + ", ".join(terms) if terms else "") + ".",
+        "Never include raw grammatical metadata like [neuter nominative plural] or literal tags like (past).",
     ]
     if has_placeholders:
         rules.append("Reproduce every %%number%% placeholder exactly, in the same position relative to the surrounding words.")
@@ -281,14 +285,22 @@ REVIEW_SYSTEM = (
     "speech, grammatical form and meanings), and you correct only what is wrong."
 )
 
-REVIEW_RULES = """Rules for the translation:
-1. Literal and faithful: every Pāli word is rendered, in the grammatical form the analysis gives (case, number, tense, person, voice); nothing is added, nothing is left out, nothing is paraphrased away.
+def review_rules() -> str:
+    """The rules the reviewer checks, in the language of the text: no text's own words in them, the terms from
+    the glossary and the analysis that follow."""
+    lang = LANGUAGE["name"]
+    after = ("is written as the plain term afterwards" if LANGUAGE["code"] == "sa" else "is rendered by the plain gloss afterwards")
+    return f"""Rules for the translation:
+1. Literal and faithful: every {lang} word is rendered, in the grammatical form the analysis gives (case, number, tense, person, voice); nothing is added, nothing is left out, nothing is paraphrased away. Where the dictionary offers several meanings, the one the sentence needs is chosen; a wrong homonym is an error.
 2. No commentary, explanation or interpretation, and no assumption that the text is religious unless its words say so.
-3. Personal names, place names and titles of texts stay untranslated in their Pāli stem form; honorifics and titles of persons (bhagavā, bhikkhave, bhante) stay untranslated exactly as they stand in the text.
-4. A word used as a technical term stays in Pāli as it stands in the text, in backticks with a short English gloss in parentheses on its first occurrence, like `viññāṇaṃ` (consciousness), and is rendered by the plain gloss afterwards; a word used in its ordinary sense is translated plainly.
-5. Particles (ca, vā, pi, eva, hi, kho, pana, iti) are rendered, not dropped. Where the dictionary offers several meanings, the one the sentence needs is chosen; a wrong homonym is an error.
-6. Markdown formatting and any %%number%% placeholders stay exactly where they are.
-7. Consistency: the same Pāli word is rendered the same way throughout, and the segments read as one continuous text."""
+3. Refinement, not replacement: correct only specific errors of meaning, case, tense or terminology; keep the draft's natural English sentence structure where it is right. An idiom is rendered by the English it expresses, never by a grammatical tag in brackets or parentheses.
+4. Personal names, place names and titles of texts stay untranslated in their {lang} stem form; honorifics and titles of persons stay untranslated exactly as they stand in the text, with no explanation in parentheses.
+5. A word used as a technical term stays in {lang}, in backticks with a short English gloss in parentheses on its first occurrence, like `term` (gloss), and {after}; a word used in its ordinary sense is translated plainly, never left in {lang}.
+6. Particles are rendered, not dropped.
+7. Markdown formatting and any %%number%% placeholders stay exactly where they are.
+8. Consistency: the same {lang} word is rendered the same way throughout, and the segments read as one continuous text.
+9. A segment is revised only for a specific, verified improvement; a segment that is already accurate is repeated unchanged."""
+
 
 REVIEW_FORMAT = """Answer in exactly this form and nothing else:
 
@@ -308,7 +320,7 @@ def review_prompt(segments: list[tuple[str, str]], analyses: list[Analysis], ext
                   glossary: dict[str, str] | None = None, known: dict[int, list[str]] | None = None) -> str:
     """segments: (pāli source, current translation) in order; known: problems the checker found, per segment."""
     specials = special_words(analyses, glossary)
-    lines = [REVIEW_RULES]
+    lines = [review_rules()]
     names = sorted({r for _, r in specials.get("name", [])})
     honorifics = sorted({r for _, r in specials.get("honorific", [])})
     terms = sorted({r for _, r in specials.get("technical", [])} | set(extra_terms or []))

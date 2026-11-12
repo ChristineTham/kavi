@@ -70,7 +70,6 @@ TABLE_SEP_RE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
 ANCHOR_ONLY_RE = re.compile(r"^\s*<[^>]*>\s*$")
 HARDBREAK_RE = re.compile(r"(\s*\\|\s{2,})$")
 HAS_LETTERS_RE = re.compile(r"[^\W\d_]", re.UNICODE)
-PALI_LETTER_RE = re.compile(r"[āīūṃṅñṭḍṇḷ]")
 
 
 @dataclass

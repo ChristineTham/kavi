@@ -121,14 +121,15 @@ def test_sanskrit_honorifics_and_technical_terms():
         # 1. Vocative honorific: first encounter gets (meaning), subsequent encounter gets untranslated vocative form
         h_voc = Headword(1, "bhagavat", "bhagavat", "masc", "", "Blessed One", "", "", "", "", "", "", "", parses=["voc sg"])
         an_voc = [Analysis(surface="bhagavan", key="bhagavan", headwords=[h_voc])]
-        glossed = set()
-        fixed1, _ = lint(an_voc, "Tell me, O Blessed One.", {}, gloss_honorifics=True, glossed=glossed)
-        assert "`Bhagavan` (the Blessed One)" in fixed1
-        assert "O " not in fixed1
+        # no parenthetical explanation of an honorific, on first use or after
+        fixed_plain, _ = lint(an_voc, "Tell me, O Blessed One.", {})
+        assert "Bhagavan" in fixed_plain
+        assert "(the Blessed One)" not in fixed_plain
+        assert "O " not in fixed_plain
 
-        fixed2, _ = lint(an_voc, "Thus said the Blessed One.", {}, gloss_honorifics=True, glossed=glossed)
-        assert "Bhagavan" in fixed2
-        assert "(the Blessed One)" not in fixed2
+        # Formulaic rule: Thus have I heard -> Thus heard by me
+        fixed_thus, _ = lint([], "Thus have I heard: at one time.", {})
+        assert fixed_thus.startswith("Thus heard by me:")
 
         # 2. Sanskrit technical term: first encounter gets `term` (gloss), subsequent encounter gets bare term
         h_term = Headword(2, "pratītyasamutpāda", "pratītyasamutpāda", "masc", "", "dependent origination", "", "", "", "", "", "", "", parses=["nom sg"])
@@ -150,3 +151,45 @@ def test_sanskrit_honorifics_and_technical_terms():
     finally:
         LANGUAGE["code"] = orig_code
 
+
+
+from kavi.dpd import Analysis, Headword
+from kavi.language import set_language
+
+
+def test_sanskrit_honorifics_are_written_only_where_the_source_has_them():
+    set_language(type("L", (), {"language": "Sanskrit", "code": "sa", "pronouns": None})())
+    try:
+        text = "The teacher of grammar said to the elder: the lord of the city heard this verse from a guide."
+        fixed, _ = lint([], text, {})
+        assert fixed == text
+        h = Headword(1, "śāstṛ", "śāstṛ", "masc", "", "teacher", "", "", "", "", "", "", "", parses=["masc nom sg"])
+        fixed, _ = lint([Analysis(surface="śāstā", key="śāstā", headwords=[h])], "The teacher spoke.", {})
+        assert "Śāstṛ" in fixed
+    finally:
+        set_language(type("L", (), {"language": "Pāli", "code": "pi", "pronouns": None})())
+
+
+def test_the_shipped_glossaries_have_one_line_per_term():
+    from collections import Counter
+    from pathlib import Path
+    import kavi
+    for f in (Path(kavi.__file__).parent / "glossaries").glob("*.txt"):
+        terms = [ln.partition(":")[0].strip() for ln in f.read_text(encoding="utf-8").splitlines()
+                 if ln.strip() and not ln.strip().startswith("#") and ":" in ln]
+        assert not [t for t, n in Counter(terms).items() if n > 1], f.name
+
+
+def test_every_alternative_gives_way_and_alms_is_no_plural():
+    set_language(type("L", (), {"language": "Sanskrit", "code": "sa", "pronouns": None})())
+    try:
+        h = Headword(1, "piṇḍapāta", "piṇḍapāta", "masc", "", "alms-food", "", "", "", "", "", "", "", parses=["masc dat sg"])
+        an = [Analysis(surface="piṇḍapātāya", key="piṇḍapātāya", headwords=[h])]
+        fixed, _ = lint(an, "He went into the city for alms.", {"piṇḍapāta": "alms-food"}, alternatives={"piṇḍapāta": ["alms food", "alms"]})
+        assert "piṇḍapātas" not in fixed and "alms-foods" not in fixed
+    finally:
+        set_language(type("L", (), {"language": "Pāli", "code": "pi", "pronouns": None})())
+    h = Headword(1, "paccaya", "paccaya", "masc", "", "cause", "", "", "", "", "", "", "", parses=["masc nom sg"])
+    an = [Analysis(surface="paccayo", key="paccayo", headwords=[h])]
+    fixed, _ = lint(an, "A requisite arises from a condition.", {"paccaya": "cause"}, alternatives={"paccaya": ["condition", "requisite"]}, glossed={"paccaya"})
+    assert "condition" not in fixed and "requisite" not in fixed

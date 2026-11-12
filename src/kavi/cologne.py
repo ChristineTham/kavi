@@ -196,7 +196,7 @@ class Cologne:
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"sanskrit.sqlite not found at {path} — run `kavi setup --sanskrit`")
-        self.con = sqlite3.connect(f"file:{path}?immutable=1", uri=True)
+        self.con = sqlite3.connect(f"file:{path}?immutable=1", uri=True, check_same_thread=False)
         self.con.row_factory = sqlite3.Row
         self._cache: dict[str, list[sqlite3.Row]] = {}
 

@@ -5,7 +5,7 @@
     kavi translate text.md --interlinear          # four lines per sentence: Pāḷi, analysis, glosses, translation
     echo "…" | kavi translate                    # or stdin
     kavi analyse "Ekaṃ samayaṃ bhagavā …"        # the DPD word-by-word table only
-    kavi setup                                   # download and convert both MITRA models to MLX
+    kavi setup                                   # download the dictionaries and the model
     kavi doctor                                  # check data files and models
     kavi app                                     # the Streamlit interface
 """
@@ -29,22 +29,16 @@ def _settings(args) -> Settings:
     if getattr(args, "model", None):
         s.translate_model = args.model
         s.eval_model = args.model
-        if hasattr(args, "interlinear_model") and not getattr(args, "interlinear_model", None):
-            args.interlinear_model = args.model
     if getattr(args, "translate_model", None):
         s.translate_model = args.translate_model
     if getattr(args, "review_model", None):
         s.eval_model = args.review_model
     if getattr(args, "rounds", None) is not None:
         s.max_rounds = args.rounds
-    if getattr(args, "no_review", False):
-        s.max_rounds = 0
     if getattr(args, "think", False):
         s.thinking = True
     if getattr(args, "max_tokens", None):
         s.max_tokens = args.max_tokens
-    if getattr(args, "sentence_words", None):
-        s.sentence_words = args.sentence_words
     if getattr(args, "batch_words", None):
         s.eval_batch_words = args.batch_words
     if getattr(args, "dual_resident", False):
@@ -60,11 +54,15 @@ def _settings(args) -> Settings:
 
 def _dpd(s: Settings):
     """The lexicon of the language: the DPD for Pāli, vidyut and the Cologne dictionaries for Sanskrit."""
+    from .language import set_language
     if s.lang == "sa":
         from .sanskrit import SanskritLexicon
-        return SanskritLexicon(s.data_dir)
-    from .dpd import DPD
-    return DPD(s.dpd_db, s.decon_db, s.decon_json, cache_kb=s.sqlite_cache_kb)
+        lexicon = SanskritLexicon(s.data_dir)
+    else:
+        from .dpd import DPD
+        lexicon = DPD(s.dpd_db, s.decon_db, s.decon_json, cache_kb=s.sqlite_cache_kb)
+    set_language(lexicon)                          # analyse and eval read the language record too, not only translate
+    return lexicon
 
 
 def _read_input(args) -> tuple[str, str | None]:
@@ -91,57 +89,64 @@ def cmd_translate(args) -> int:
     if problems:
         for p in problems:
             sys.stderr.write(f"! {p}\n")
-        if any("dpd.db" in p or "model" in p for p in problems):
+        if any("(optional" not in p for p in problems):      # only the deconstructor may be missing
             return 1
     dpd = _dpd(s)
     pool = ModelPool(s.translate_model, s.eval_model)
     tr = Translator(s, dpd, pool, use_cache=not args.no_cache)
-    inputs: list[tuple[str, str | None]] = []
+    inputs: list[tuple[str, str | None, Path | None]] = []   # text, source name, path below the directory given
     if args.paths and len(args.paths) > 1 or (args.paths and Path(args.paths[0]).is_dir()):
-        files = []
         for raw in args.paths:
             p = Path(raw)
-            files.extend(sorted(p.rglob("*.md")) + sorted(p.rglob("*.txt")) if p.is_dir() else [p])
-        inputs = [(f.read_text(encoding="utf-8"), str(f)) for f in files]
+            files = sorted(p.rglob("*.md")) + sorted(p.rglob("*.txt")) if p.is_dir() else [p]
+            inputs += [(f.read_text(encoding="utf-8"), str(f), f.relative_to(p) if p.is_dir() else Path(f.name)) for f in files]
     else:
-        inputs = [_read_input(args)]
+        text, name = _read_input(args)
+        inputs = [(text, name, Path(Path(name).name) if name else None)]
+    many = len(inputs) > 1
+
+    def target(arg: str, rel: Path | None, default: str, rename=lambda r: r) -> Path:
+        """Where an output goes: the file named, or below the directory named for several inputs, keeping each
+        input's sub-folder so that two files of one name do not overwrite each other."""
+        out = Path(arg)
+        if out.is_dir() or many:
+            out = out / (rename(rel) if rel else default)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        return out
+
     segments = None
     if getattr(args, "segments", None):
         from .interlinear import load_segments
         segments = []
         for raw in args.segments:
             segments.extend(load_segments(Path(raw)))
-    for text, name in inputs:
+    for text, name, rel in inputs:
         if name:
             sys.stderr.write(f"== {name}\n")
         result = tr.translate_markdown(text, segments=segments, interlinear=bool(args.interlinear), review=s.max_rounds > 0)
         if args.out:
-            out = Path(args.out)
-            if out.is_dir() or (len(inputs) > 1):
-                out.mkdir(parents=True, exist_ok=True)
-                out = out / (Path(name).stem + ".en" + Path(name).suffix if name else "translation.md")
-            else:
-                out.parent.mkdir(parents=True, exist_ok=True)
+            out = target(args.out, rel, "translation.md", lambda r: r.with_name(r.stem + ".en" + r.suffix))
             out.write_text(result.markdown, encoding="utf-8")
             sys.stderr.write(f"   -> {out}\n")
         else:
             print(result.markdown)
-        if getattr(args, "en_out", None) and hasattr(result, "en_markdown") and result.en_markdown:
-            en_path = Path(args.en_out)
-            if en_path.is_dir() or (len(inputs) > 1):
-                en_path.mkdir(parents=True, exist_ok=True)
-                en_target = en_path / (Path(name).name if name else "translation.en.md")
-            else:
-                en_path.parent.mkdir(parents=True, exist_ok=True)
-                en_target = en_path
-            en_target.write_text(result.en_markdown, encoding="utf-8")
-            sys.stderr.write(f"   normal en -> {en_target}\n")
-        if args.table and hasattr(result, "table"):
-            Path(args.table).write_text(result.table(), encoding="utf-8")
-            sys.stderr.write(f"   word analysis -> {args.table}\n")
-        if args.report:
-            Path(args.report).write_text(result.report(), encoding="utf-8")
-            sys.stderr.write(f"   review report -> {args.report}\n")
+        if args.first_pass_out and result.first_pass_en:
+            out = target(args.first_pass_out, rel, "first_pass.en.md", lambda r: r.with_name(r.stem + ".first_pass.en.md"))
+            out.write_text(result.first_pass_en, encoding="utf-8")
+            sys.stderr.write(f"   first pass ref -> {out}\n")
+        if args.en_out and result.en_markdown:
+            out = target(args.en_out, rel, "translation.en.md")
+            out.write_text(result.en_markdown, encoding="utf-8")
+            sys.stderr.write(f"   normal en -> {out}\n")
+        for arg, text_of, label in ((args.table, result.table, "word analysis"), (args.report, result.report, "review report")):
+            if not arg:
+                continue
+            side = Path(arg)
+            if many and rel:                           # one file per input, not the last input's alone
+                side = side.with_name(f"{side.stem}.{'.'.join(rel.with_suffix('').parts)}{side.suffix}")
+            side.parent.mkdir(parents=True, exist_ok=True)
+            side.write_text(text_of(), encoding="utf-8")
+            sys.stderr.write(f"   {label} -> {side}\n")
         sys.stderr.write(f"   {len(result.units)} segments, {result.model_calls} model calls, {result.seconds:.0f}s\n")
     return 0
 
@@ -258,6 +263,7 @@ def cmd_setup_dpd(args) -> int:
 
     if decon_json.exists() and (not decon_db.exists() or force):
         from .dpd import DPD
+        decon_db.unlink(missing_ok=True)               # an existing index is opened as it is, never rebuilt
         print("indexing deconstructor into SQLite …")
         con = DPD._open_decon(decon_db, decon_json)
         if con:
@@ -468,7 +474,8 @@ def cmd_doctor(args) -> int:
     tier = memory_tier()
     print(f"\nHardware & Memory:")
     print(f"  system RAM      : {ram_gb} GB unified memory (Tier: {tier})")
-    print(f"  model residency : {'dual resident (0s reload)' if not s.release_translator else 'sequential release (peak ~18GB)'}")
+    two = s.translate_model != s.eval_model
+    print(f"  model residency : {'one model for both roles' if not two else 'two models resident together' if not s.release_translator else 'two models, one at a time'}")
     print(f"  sqlite cache    : {s.sqlite_cache_kb // 1024} MB")
     if tier == "32GB":
         print("  recommendation  : 32GB tier — consider 8-bit or 4-bit quantisation (`kavi setup --bits 8`)")
@@ -524,24 +531,22 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--table", help="also write the DPD word-analysis table (Markdown) here")
     t.add_argument("--report", help="also write the review report (issues and revisions per segment) here")
     t.add_argument("--rounds", type=int, help="review/revise rounds (default 5)")
-    t.add_argument("--no-review", action="store_true", help="translate only, skip the review model")
+    t.add_argument("--first-pass", dest="first_pass_out", help="also write the initial discourse macro-pass (first pass reference) to this file")
     t.add_argument("--think", action="store_true", help="let the review model think before answering (slower)")
     t.add_argument("--no-cache", action="store_true", help="ignore and do not write the translation cache")
-    t.add_argument("--model", help="single model to use for all roles (sets translate, review, and interlinear models)")
+    t.add_argument("--model", help="single model to use for both roles (translate and review)")
     t.add_argument("--translate-model", help="MLX path of the translation model")
     t.add_argument("--review-model", help="MLX path of the review model")
     t.add_argument("--max-tokens", type=int)
-    t.add_argument("--sentence-words", type=int, help="translate paragraphs longer than this sentence by sentence")
     t.add_argument("--batch-words", type=int, help="review batches up to this many Pāli words")
-    t.add_argument("--dual-resident", action="store_true", help="keep both translate and review models resident in memory (for >= 128GB Macs)")
-    t.add_argument("--release-translator", action="store_true", help="free the translator model before review phase (recommended on <= 64GB Macs)")
+    t.add_argument("--dual-resident", action="store_true", help="keep two different translate and review models resident together (for >= 128GB Macs)")
+    t.add_argument("--release-translator", action="store_true", help="with two different models, free the translator before the review, which then revises by itself (the default on <= 64GB Macs)")
     t.add_argument("--glossary", help="file of 'term: gloss' lines to keep in Pāli with a gloss (default: the built-in doctrinal glossary; 'none' to disable)")
     t.add_argument("--interlinear", action="store_true",
                    help="interlinear output: for each sentence the Pāḷi, the analysis in the textbook's symbols, the glosses and the translation")
     t.add_argument("--en", "--en-out", dest="en_out",
                    help="also write the normal English translation (reconstructed from the interlinear) to this file or directory")
     t.add_argument("--segments", nargs="*", help="SuttaCentral segment JSON file(s): the sentences and their numbers follow them")
-    t.add_argument("--interlinear-model", help="MLX path of the model that chooses the parses and glosses (default: the review model)")
     t.set_defaults(func=cmd_translate)
 
     a = sub.add_parser("analyse", aliases=["analyze"], help="DPD word-by-word analysis of a text")

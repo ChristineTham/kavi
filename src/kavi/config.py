@@ -85,6 +85,9 @@ def _data_dir() -> Path:
     return REPO_ROOT / "data"
 
 
+_GLOSSARY_CACHE: dict = {}
+
+
 @dataclass
 class Settings:
     data_dir: Path = field(default_factory=_data_dir)
@@ -93,7 +96,6 @@ class Settings:
     eval_model: str = ""
     max_rounds: int = 5            # review/revise rounds per batch (0 = translate only)
     max_tokens: int = 2048         # generation cap per model call
-    sentence_words: int = 60       # a paragraph longer than this is translated sentence by sentence
     eval_batch_words: int = 400    # paragraphs are reviewed together up to this many Pāḷi words
     thinking: bool = False         # let the instruction-tuned model think before it answers
     release_translator: bool = field(default_factory=_default_release_translator)  # True on <=64GB, False on 128GB
@@ -122,8 +124,12 @@ class Settings:
         """(stem, gloss, alternatives) per glossary line "stem: gloss | alt1, alt2"."""
         if not self.glossary or not Path(self.glossary).exists():
             return []
+        path = Path(self.glossary)
+        stamp = (str(path), path.stat().st_mtime_ns)       # read once, and again only when the file changes
+        if _GLOSSARY_CACHE.get("stamp") == stamp:
+            return _GLOSSARY_CACHE["lines"]
         out = []
-        for line in Path(self.glossary).read_text(encoding="utf-8").splitlines():
+        for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
@@ -132,6 +138,7 @@ class Settings:
             gloss, _, alts = rest.partition("|")
             if term.strip():
                 out.append((term.strip().strip("`"), gloss.strip(), [a.strip() for a in alts.split(",") if a.strip()]))
+        _GLOSSARY_CACHE.update(stamp=stamp, lines=out)
         return out
 
     @property

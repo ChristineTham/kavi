@@ -5,9 +5,10 @@ import json
 import pytest
 from kavi.config import Settings
 from kavi.dpd import DPD
-from kavi.interlinear import (Interlinear, Parse, analyse_tokens, is_pali, load_segments, match_segments,
+from kavi.interlinear import (Parse, analyse_tokens, is_source, load_segments, match_segments,
                               parse_answer, tokenise)
 from kavi.models import Reply
+from kavi.pipeline import Translator
 
 s = Settings()
 needs_dpd = pytest.mark.skipif(not s.dpd_db.exists(), reason="dpd.db not available")
@@ -83,12 +84,14 @@ def test_sandhi_and_compounds_are_isolated(dpd):
 
 
 @needs_dpd
-def test_is_pali(dpd):
-    assert is_pali(dpd, "Evaṁ me sutaṁ— ekaṁ samayaṁ bhagavā uruvelāyaṁ viharati.")
-    assert not is_pali(dpd, 'Part of "A Beginner (Non-Linguist) Guide to Learning Pali"')
+def test_is_source(dpd):
+    assert is_source(dpd, "Evaṁ me sutaṁ— ekaṁ samayaṁ bhagavā uruvelāyaṁ viharati.")
+    assert not is_source(dpd, 'Part of "A Beginner (Non-Linguist) Guide to Learning Pali"')
 
 
 class FakeModel:
+    path = "Qwen3.8-27B-bf16"
+
     def __init__(self, answers):
         self.answers, self.calls = answers, []
 
@@ -117,16 +120,17 @@ def test_document_with_a_fake_model(dpd, tmp_path):
     text = ('---\ntitle: x\n---\n\n:::tip[Info]\nPart of "A Beginner (Non-Linguist) Guide to Learning Pali"\n:::\n\n## Paṭhamabodhisutta\n\n'
             '>Evaṁ me sutaṁ— ekaṁ samayaṁ bhagavā uruvelāyaṁ viharati.\n\n>“Yadā have pātubhavanti dhammā,\nĀtāpino jhāyato brāhmaṇassa.\n')
     model = FakeModel([
-        ("Sentence: Evaṁ me sutaṁ", '{"words": [{"n": 1, "parse": 1, "gloss": "thus"}, {"n": 2, "parse": 2, "gloss": "by me"}, {"n": 3, "parse": 1, "gloss": "heard"}], "translation": "Thus it was heard by me—"}'),
+        ("Sentence: Evaṁ me sutaṁ", '{"words": [{"n": 1, "parse": 1, "gloss": "thus"}, {"n": 2, "parse": 2, "gloss": "by me"}, {"n": 3, "parse": 1, "gloss": "heard"}], "translation": "Thus heard by me—"}'),
         ("Sentence: ekaṁ samayaṁ", '{"words": [{"n": 1, "parse": 1, "gloss": "one"}, {"n": 2, "parse": 1, "gloss": "time"}, {"n": 3, "parse": 1, "gloss": "the Blessed One"}, {"n": 4, "parse": 1, "gloss": "at Uruvelā"}, {"n": 5, "parse": 1, "gloss": "dwells"}], "translation": "At one time the Blessed One dwells at Uruvelā."}'),
         ("Yadā have pātubhavanti", '{"words": [{"n": 1, "parse": 1, "gloss": "when"}, {"n": 2, "parse": 1, "gloss": "indeed"}, {"n": 3, "parse": 1, "gloss": "appear"}, {"n": 4, "parse": 1, "gloss": "phenomena"}], "translation": "When indeed phenomena appear,"}'),
         ("Ātāpino jhāyato", '{"words": [{"n": 1, "parse": 1, "gloss": "ardent"}, {"n": 2, "parse": 1, "gloss": "meditating"}, {"n": 3, "parse": 1, "gloss": "to the brahmin"}], "translation": "to the ardent, meditating brahmin."}'),
     ])
     st = Settings()
     st.cache_dir = tmp_path
-    inter = Interlinear(st, dpd, FakePool(model), progress=lambda m: None, use_cache=False)
+    st.max_rounds = 0
+    inter = Translator(st, dpd, FakePool(model), progress=lambda m: None, use_cache=False)
     segments = [("0.2", "Paṭhamabodhisutta"), ("1.1", "Evaṁ me sutaṁ—"), ("1.2", "ekaṁ samayaṁ bhagavā uruvelāyaṁ viharati. ")]
-    res = inter.translate_markdown(text, segments)
+    res = inter.translate_markdown(text, segments, interlinear=True)
     out = res.markdown
     assert out.startswith("---\ntitle: x\n---")
     assert 'Part of "A Beginner' in out and "## Paṭhamabodhisutta" in out
@@ -137,11 +141,19 @@ def test_document_with_a_fake_model(dpd, tmp_path):
     assert "2.1 “Yadā have pātubhavanti dhammā,  " in out and "2.2 Ātāpino" in out      # the quotation mark stays
     assert out.rstrip().endswith("When indeed phenomena appear,  \nto the ardent, meditating brahmin.")
     assert ">" not in out.split("## Paṭhamabodhisutta")[1]                                # the blockquotes are replaced
-    assert len(model.calls) == 4
+    assert len(model.calls) == 5                                                          # the discourse pass and four sentences
 
     # The deterministic normal English markdown
     en = res.en_markdown
     assert en.startswith("---\ntitle: x\n---")
     assert "## Paṭhamabodhisutta" in en
-    assert ">Thus it was heard by me— At one time the Bhagavā dwells at Uruvelā." in en
+    assert ">Thus heard by me— At one time the Bhagavā dwells at Uruvelā." in en
     assert ">When indeed phenomena appear,  \n>to the ardent, meditating brahmin." in en
+
+
+def test_parse_answer_survives_odd_json_and_keeps_diacritics():
+    from kavi.interlinear import format_mantra
+    assert parse_answer('{"words": [], "translation": ["a", "b"]}', [])[2] == "a b"
+    assert parse_answer('{"words": null, "translation": "x"}', [])[2] == "x"
+    assert parse_answer('{"words": [{"n": 1, "gloss": "x"}], "translation": "Bhagavān said \\u201cŚāriputra\\u201d" ', [object()])[2] == "Bhagavān said “Śāriputra”"
+    assert not format_mantra("tadyathā gate gate pāragate pārasaṃgate bodhi svāhā", "gone, gone beyond, awakening, hail!").startswith("None")

@@ -210,9 +210,8 @@ uv run kavi app                                  # Streamlit interface
 * `--interlinear`: Produce 4-line interlinear output instead of standard prose.
 * `--model <name>`: Specify a local MLX model path or Hugging Face repo (e.g. `mlx-community/Qwen3.8-27B-bf16`).
 * `--lang <pi|sa>`: Select language: `pi` Pāḷi (default) or `sa` Sanskrit.
-* `--rounds N`: Maximum review critique rounds per batch (default 5; `--no-review` for draft only).
+* `--rounds N`: Maximum review critique rounds per batch (default 5).
 * `--glossary FILE`: Technical terms glossary (default `src/kavi/glossaries/default.txt`).
-* `--sentence-words N`: Paragraphs longer than this are segmented sentence by sentence.
 * `--batch-words N`: Review batch size in source words (default 400).
 
 ---

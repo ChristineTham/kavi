@@ -230,15 +230,15 @@ def undo_taddhita_pali(word: str) -> list[TaddhitaProposal]:
 
     # §364 Vantu, mantu: possessive suffixes (guṇavantu -> guṇa, satimantu -> sati)
     if word.endswith(("vantu", "vant", "vā", "vanto", "vantaṃ", "vantena")):
-        base = re.sub(r"(vant[u|o|a|aṃ|ena]?|vā)$", "", word)
+        base = re.sub(r"(vant(?:ena|aṃ|u|o|a)?|vā)$", "", word)
         add_prop(base, "-vantu", "§364 Vantu", "possessing / endowed with")
     if word.endswith(("mantu", "mant", "mā", "manto", "mantaṃ", "mantena")):
-        base = re.sub(r"(mant[u|o|a|aṃ|ena]?|mā)$", "", word)
+        base = re.sub(r"(mant(?:ena|aṃ|u|o|a)?|mā)$", "", word)
         add_prop(base, "-mantu", "§364 Mantu", "possessing / endowed with")
 
     # §367 Ī: possessive suffix (sukhī -> sukha, dhammī -> dhamma, daṇḍī -> daṇḍa)
     if word.endswith(("ī", "ino", "inaṃ", "inā")):
-        base = re.sub(r"(ī|in[o|a|aṃ|ā]?)$", "", word)
+        base = re.sub(r"(ī|in(?:aṃ|o|a|ā)?)$", "", word)
         add_prop(base, "-ī", "§367 Ī", "having / characterized by")
 
     # §372 Maya: material / made of (suvaṇṇamaya -> suvaṇṇa, manomaya -> manas)
@@ -375,26 +375,26 @@ def decompose_kitaka_pali(word: str) -> list[KitakaProposal]:
 
     # §527/§565 Anta, Māna: present active & middle/passive participles
     if word.endswith(("anta", "anto", "antaṃ", "antā", "onta", "onto", "ontaṃ", "enta", "ento", "entaṃ")):
-        base = re.sub(r"(ant|ont|ent)[o|a|aṃ|ā]?$", "", word)
+        base = re.sub(r"(ant|ont|ent)(?:aṃ|o|a|ā)?$", "", word)
         out.append(KitakaProposal(base, "-anta", "present participle (prp)", "§527 Anta"))
     if word.endswith(("māna", "māno", "mānaṃ", "mānā")):
-        base = re.sub(r"mān[o|a|aṃ|ā]?$", "", word)
+        base = re.sub(r"mān(?:aṃ|o|a|ā)?$", "", word)
         out.append(KitakaProposal(base, "-māna", "present middle participle (prp)", "§565 Māna"))
 
     # §528/§540 Tabba, Anīya, Neyya: future passive participles / gerundives (fpp)
     if word.endswith(("tabba", "tabbo", "tabbaṃ", "tabbā")):
-        base = re.sub(r"tabb[o|a|aṃ|ā]?$", "", word)
+        base = re.sub(r"tabb(?:aṃ|o|a|ā)?$", "", word)
         out.append(KitakaProposal(base, "-tabba", "gerundive (fpp)", "§528 Tabba"))
     if word.endswith(("anīya", "anīyo", "anīyaṃ", "anīyā", "aṇīya", "aṇīyo", "aṇīyaṃ", "aṇīyā")):
-        base = re.sub(r"a[nṇ]īy[o|a|aṃ|ā]?$", "", word)
+        base = re.sub(r"a[nṇ]īy(?:aṃ|o|a|ā)?$", "", word)
         out.append(KitakaProposal(base, "-anīya", "gerundive (fpp)", "§540 Anīya"))
     if word.endswith(("teyya", "teyyo", "teyyaṃ")):
-        base = re.sub(r"teyy[o|a|aṃ]?$", "", word)
+        base = re.sub(r"teyy(?:aṃ|o|a)?$", "", word)
         out.append(KitakaProposal(base, "-teyya", "gerundive (fpp)", "§540 Neyya"))
 
     # §531 Ṇvu -> aka: agent nouns (kāraka, dāyaka, sāvaka)
     if word.endswith(("aka", "ako", "akaṃ", "ikā")):
-        base = re.sub(r"[a|i]k[o|a|aṃ|ā]?$", "", word)
+        base = re.sub(r"[ai]k(?:aṃ|o|a|ā)?$", "", word)
         out.append(KitakaProposal(base, "-aka", "agent noun", "§531 Ṇvu -> §622 aka"))
 
     # §532 Tu -> tar: agent nouns (satthar, kattar, dātar)
@@ -424,7 +424,7 @@ def decompose_kitaka_pali(word: str) -> list[KitakaProposal]:
 
     # §622 Yu -> ana: action and state verbal nouns (gamana, dāna, vedanā)
     if word.endswith(("ana", "anaṃ", "anā")):
-        base = re.sub(r"an[a|aṃ|ā]?$", "", word)
+        base = re.sub(r"an(?:aṃ|a|ā)?$", "", word)
         out.append(KitakaProposal(base, "-ana", "action noun", "§622 Yu -> ana"))
 
     return out

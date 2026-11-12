@@ -26,6 +26,7 @@ from .panini import (
     DCS_COMMON_LEMMAS,
     DCS_COMP_MEMBERS,
     SAMASANTA_STEMS,
+    VOWELS,
     compound_junction_variants,
     external_sandhi_cands,
     is_agent_tr,
@@ -138,12 +139,16 @@ E_BEFORE_VOWEL = {"ta": "te", "ya": "ye", "ka": "ke", "ma": "me"}
 PREFIX_SURFACES = sorted({"prati", "praty", "pari", "pary", "abhi", "abhy", "adhi", "adhy", "anu", "anv", "upa", "upā", "ava", "api", "apa",
                           "ati", "aty", "sam", "saṃ", "pra", "prā", "vi", "vy", "ni", "ny", "nis", "nir", "niḥ", "niṣ", "niś", "ud", "ut",
                           "un", "uc", "uj", "dur", "dus", "duḥ", "duṣ", "parā", "ā", "śrad", "tiras", "puras"}, key=len, reverse=True)   # tiras-kṛtya
+PREFIX_BEFORE_VOWEL = {"praty": "prati", "pary": "pari", "abhy": "abhi", "adhy": "adhi", "aty": "ati", "anv": "anu", "vy": "vi", "ny": "ni"}   # 6.1.77 iko yaṇ aci
+# the dictionary form of a prefix the word has in a sandhi form (for the grammar note)
+PREFIX_CITED = {**PREFIX_BEFORE_VOWEL, "saṃ": "sam", "ut": "ud", "un": "ud", "uc": "ud", "uj": "ud", "nir": "nis", "niḥ": "nis", "niṣ": "nis", "niś": "nis",
+                "dur": "dus", "duḥ": "dus", "duṣ": "dus"}
 # a finite verb's endings (the plain and the hybrid spellings): a word so ended that the kosha does not know is tried as a prefixed verb
 VERB_ENDINGS = ("ti", "te", "nti", "nte", "ṃti", "ṃte", "si", "se", "tha", "mi", "maḥ", "mahe", "dhve", "yāt", "yuḥ", "yām", "yāma", "et", "eyuḥ",
                 "eta", "eyam", "tu", "ntu", "ṃtu", "āt", "īt", "iṣuḥ", "sīt", "uḥ", "ire", "ate", "ante", "mahi", "vahi", "mahai", "vahai")
+CASE_ENDINGS = ("āt", "asya", "ena", "ebhyaḥ", "ānām")   # the endings of an a-stem's oblique cases, as a word may end that is no stem
 INDEFINITE = ("cit", "cid", "cana", "api")  # kaścit, kecit, kiṃcana: the indefinite pronoun
 RARE_TENSES = {"imperf", "perf", "aor", "bened", "cond", "injunctive", "plup", "pfut"}   # the tenses a chance verb reading comes in
-VOICED = "gjḍdbnmyrlvhñṅṇ"                  # the consonants before which a visarga is written r (siddhir na) and a final k g (vāg viṣpandaḥ)
 PARTICLE_RIGHT = {"iti", "eva", "api", "iva", "ca", "vā", "hi", "tu"}
 # the gender of a Buddhist term in its Buddhist use, where Monier-Williams' entry would mislead (sattva "being" is masculine)
 GENDER_OVERRIDE = {"sattva": "masc", "bodhi": "fem", "dhātu": "masc", "samādhi": "masc", "śāstṛ": "masc", "kṣetra": "nt", "skandha": "masc",
@@ -178,7 +183,6 @@ VERB_POS = ("pr", "aor", "fut", "imp", "opt", "cond", "imperf", "perf", "pfut", 
 VERBAL_POS = VERB_POS + ("abs", "inf", "pp", "prp", "ptp")   # a finite verb or a form made from one
 WORD_CHARS = "a-zāīūṛṝḷḹṃṁḥṅñṭḍṇśṣ’'"
 IAST_WORD = re.compile(rf"[{WORD_CHARS}]+", re.I)
-VOWELS = "aāiīuūṛṝḷeoAI"
 SHORT_MEMBERS = {"tat", "tad", "sat", "sad", "yat", "yad", "sva", "ap", "go", "kha", "bhū", "vāc", "diś", "hṛd"}   # tat-kṣaya, sad-dharma, ab-dhātu: short stems that head compounds
 # the root as it stands before -ya in an absolutive, and the present the dictionaries cite the verb by
 ABSOLUTIVE_ROOTS = {"kṛt": "karoti", "gam": "gacchati", "bhū": "bhavati", "dā": "dadāti", "sthā": "tiṣṭhati", "jñā": "jānāti", "hṛt": "harati",
@@ -206,6 +210,36 @@ def to_slp1(iast: str) -> str:
 
 def to_iast(slp: str) -> str:
     return lipi.transliterate(slp, lipi.Scheme.Slp1, lipi.Scheme.Iast)
+
+
+def join_prefix(surface: str, rest: str, base: str) -> str:
+    """A verbal prefix put back on a lemma. ``surface`` is the prefix as the word has it before ``rest``, in its sandhi
+    form; ``base`` is the lemma found for ``rest``. Where the word has the prefix before a vowel (the augment of
+    adhy-abhāṣata, anv-agacchat, sam-agacchat, nir-akrāmat) and the lemma begins with a consonant, the prefix takes the
+    form it has before that consonant: adhibhāṣate, anugacchati, saṃgacchati, niṣkrāmati (Pāṇini 6.1.77 undone, 8.3.23,
+    8.3.34–41, 8.4.40, 8.4.55). Otherwise the junction is the text's own (pary-avāpnoti, pari-tyajati), with the ṣ or ṇ
+    the prefix causes (8.3.59, 8.4.14) kept on the lemma: ni-ṣīdati."""
+    if not base:
+        return surface
+    if base[:1] in VOWELS or rest[:1] not in VOWELS:
+        if rest[:1] != base[:1] and rest[:1] + base[:1] in ("ṣs", "ṇn"):
+            if base[:3] == "sth":
+                base = "ṣṭh" + base[3:]
+            elif base[:2] in ("st", "sn"):
+                base = "ṣ" + {"t": "ṭ", "n": "ṇ"}[base[1]] + base[2:]
+            else:
+                base = rest[0] + base[1:]
+        return surface + base
+    first = base[0]
+    if surface in PREFIX_BEFORE_VOWEL:
+        return PREFIX_BEFORE_VOWEL[surface] + base
+    if surface == "sam":
+        return "saṃ" + base
+    if surface == "ud":
+        return ("uc" if first == "c" else "uj" if first == "j" else "un" if first in "nm" else "ut" if first in "kptṭsś" else "ud") + base
+    if surface in ("nir", "dur"):
+        return surface[:2] + ("ṣ" if first in "kp" else "ś" if first == "c" else "s" if first in "tṭ" else "ḥ" if first in "sśṣ" else "r") + base
+    return surface + base
 
 
 def _tag(x) -> str:
@@ -301,6 +335,8 @@ class SanskritLexicon:
         self._pos_cache: dict[tuple, str] = {}
         self._sandhi_cache: dict[str, list[list[str]]] = {}
         self._comp_splits_cache: dict[str, list[list[str]]] = {}
+        self._resolve_cache: dict[tuple[str, bool], tuple[list[Headword], str]] = {}
+        self._model_cache: dict[tuple[str, bool], list[Headword]] = {}
         self._hw_id = 0
 
     # -- helpers ----------------------------------------------------------------------------
@@ -535,11 +571,24 @@ class SanskritLexicon:
             return not any(r["source"] == "mw" and not Cologne.is_name_body(r["body"]) for r in self.cologne.lookup(stem))
         return self.cologne.is_name(stem)
 
-    def _make_noun(self, stem: str, pos: str, parses: list[str], grammar: str, note: str = "") -> Headword:
-        """A nominal headword with its dictionary meaning, its kind and the members Monier-Williams marks."""
-        meaning, pali = self._meaning(stem)
-        kind = _classify(stem, meaning, pali)
-        if not kind and len(stem) >= 4 and self._name_only(stem):
+    def _name_form(self, stem: str, parses: list[str], participle: bool = False) -> bool:
+        """Whether a form of a name's stem can be the name. A name that is also a describing word (the kosha derives the
+        stem as a ``participle`` too, or the dictionaries analyse it as a negation: Aniruddha "unobstructed", Pūrṇa
+        "full", Sudatta "well given", Akṣobhya "unshakeable") is the person only in the masculine singular; its other
+        forms are the describing word (the Heart Sūtra's dharmas are ``anutpannā aniruddhā``). A name that is nothing
+        else keeps its plural (``sumeravaḥ``, the Sumerus)."""
+        if not parses or any(p.startswith("masc") and p.endswith(" sg") for p in parses):
+            return True
+        return not participle and not self._negated_rest(stem)
+
+    def _make_noun(self, stem: str, pos: str, parses: list[str], grammar: str, note: str = "", name_ok: bool = True) -> Headword:
+        """A nominal headword with its dictionary meaning, its kind and the members Monier-Williams marks; ``name_ok``
+        false for a form that cannot be the proper name its stem also is (see :meth:`_name_form`)."""
+        meaning, _ = self._meaning(stem)
+        kind = _classify(stem, meaning)
+        if kind == "name" and not name_ok:
+            kind = ""
+        if not kind and name_ok and len(stem) >= 4 and self._name_only(stem):
             kind = "name"                                            # Subhūti, Anāthapiṇḍada: the dictionaries' name entries
         members = self._dictionary_members(stem) if kind not in ("name", "honorific") else []
         if members and members[0] == "na" and stem in CORE_TERMS:
@@ -604,12 +653,12 @@ class SanskritLexicon:
                 parse = ("reflx " if reflx else "") + f"{lak} {PURUSHA.get(_tag(e.purusha), '3rd')} {VACANA.get(_tag(e.vacana), 'sg')}"
                 hk = ("verb", lemma, lak, passive)
                 if hk not in out:
-                    meaning, pali = self._meaning(lemma, self._root_keys(dhatu, getattr(e.dhatu_entry, "clean_text", "") or ""))
+                    meaning, _ = self._meaning(lemma, self._root_keys(dhatu, getattr(e.dhatu_entry, "clean_text", "") or ""))
                     root = to_iast(getattr(e.dhatu_entry, "clean_text", "") or "")
                     out[hk] = Headword(id=self._new_id(), lemma=lemma, stem=lemma, pos=lak, grammar=lak + (" pass" if passive else "") + (f"; {note}" if note else ""),
                                        meaning=meaning, meaning_lit="", meaning_2=getattr(e.dhatu_entry, "artha_en", "") or "",
                                        construction="", root=f"√{root}" if root else "", root_meaning=getattr(e.dhatu_entry, "artha_sa", "") or "",
-                                       family_set="", plus_case="", parses=[parse], kind=_classify(lemma, meaning, pali))
+                                       family_set="", plus_case="", parses=[parse], kind=_classify(lemma, meaning))
                 elif parse not in out[hk].parses:
                     out[hk].parses.append(parse)
                 continue
@@ -625,10 +674,10 @@ class SanskritLexicon:
                 if pos in ("abs", "inf"):
                     hk = (pos, verb)
                     if hk not in out:
-                        meaning, pali = self._meaning(verb, self._root_keys(dhatu, getattr(pe.dhatu_entry, "clean_text", "") or ""))
+                        meaning, _ = self._meaning(verb, self._root_keys(dhatu, getattr(pe.dhatu_entry, "clean_text", "") or ""))
                         out[hk] = Headword(id=self._new_id(), lemma=verb, stem=verb, pos=pos, grammar=f"{pos} of {verb}" + (f"; {note}" if note else ""),
                                            meaning=meaning, meaning_lit="", meaning_2="", construction=f"{verb} + {affix}", root="", root_meaning="",
-                                           family_set="", plus_case="", parses=[], kind=_classify(verb, meaning, pali))
+                                           family_set="", plus_case="", parses=[], kind=_classify(verb, meaning))
                     continue
                 stem = self._participle_stem(dhatu, krt, key)
                 if pos in ("masc", "fem", "nt") or _tag(krt) not in KRT:   # a primary noun (kṣaya, lakṣaṇa, prāpti): a plain noun
@@ -638,18 +687,22 @@ class SanskritLexicon:
                 hk = ("part", stem, pos)
                 parse = f"{gender} {case} {number}".strip()
                 if hk not in out:
-                    stem_meaning, pali = self._meaning(stem)
+                    stem_meaning, _ = self._meaning(stem)
                     verb_meaning, _ = self._meaning(verb, self._root_keys(dhatu, getattr(pe.dhatu_entry, "clean_text", "") or ""))
                     verb_meaning = verb_meaning or getattr(pe.dhatu_entry, "artha_en", "") or ""
                     out[hk] = Headword(id=self._new_id(), lemma=stem, stem=stem, pos=pos, grammar=f"{pos} of {verb}" + (f"; {note}" if note else ""),
                                        meaning=verb_meaning or stem_meaning, meaning_lit="", meaning_2=stem_meaning if verb_meaning else "", construction=f"{verb} + {affix}", root="", root_meaning="",
-                                       family_set="", plus_case="", parses=[parse], kind=_classify(stem, stem_meaning or verb_meaning, pali))
+                                       family_set="", plus_case="", parses=[parse], kind=_classify(stem, stem_meaning or verb_meaning))
                 elif parse not in out[hk].parses:
                     out[hk].parses.append(parse)
                 continue
             stem = to_iast(pe.lemma)
             lingas = [LINGA.get(_tag(l), "") for l in (getattr(pe, "lingas", None) or [])]
             self._add_noun(out, stem, lingas, gender, case, number, note, is_avyaya=bool(getattr(pe, "is_avyaya", False)), loose=loose)
+        participles = {hk[1] for hk in out if hk[0] == "part"}
+        for hk, h in out.items():                                    # aniruddhā: the adjective, not the disciple (the parses are all in now)
+            if hk[0] == "noun" and h.kind == "name" and not self._name_form(h.stem, h.parses, h.stem in participles):
+                out[hk] = self._make_noun(h.stem, h.pos, h.parses, h.grammar.split(";")[0].replace(", comp", ""), note, name_ok=False)
         hws = list(out.values())
         if self.cologne is not None and len(hws) > 1:                 # rūp, nam: a root read as a noun stem, beside real readings
             hws = [h for h in hws if not (h.pos in NOMINAL_POS and h.pos != "pron" and self.cologne.is_root(h.stem))] or hws
@@ -897,7 +950,12 @@ class SanskritLexicon:
                 continue                                             # anyasmād api: two words
             h = hws[0]
             particle = "cit" if suf == "cid" else suf
-            lemma = (base if h.pos == "ind" else "kaś") + particle if h.pos == "ind" or h.stem == "kim" else key
+            if h.pos == "ind":
+                lemma = base + particle
+            elif particle == "api":
+                lemma = "kimapi"                                     # kimapi, kamapi: kim + api (ko 'pi), cited by the stem; there is no kaś-api
+            else:
+                lemma = "kaś" + particle                             # kaścit, kaścana
             return [replace(h, id=self._new_id(), lemma=lemma, stem=lemma, grammar=h.pos + ", indefinite" + (f"; {note}" if note else ""),
                             meaning="someone, something, any; (with na) no one, nothing", construction=f"{h.lemma} + {particle}",
                             compound_type="", compound_construction="", parses=list(h.parses), kind="")]
@@ -905,7 +963,15 @@ class SanskritLexicon:
 
     def _resolve(self, word: str, loose: bool = False) -> tuple[list[Headword], str]:
         """Headwords for a form as it stands: the kosha, a regular inflection of a dictionary stem, or a hybrid
-        spelling's classical reading (with the note that says so)."""
+        spelling's classical reading (with the note that says so). Memoised on the arguments (the splitters ask for the
+        same form thousands of times); each call gets its own list, the headwords are shared and not to be altered."""
+        ck = (word, bool(loose))
+        if ck not in self._resolve_cache:
+            self._resolve_cache[ck] = self._resolve_uncached(word, loose)
+        hws, note = self._resolve_cache[ck]
+        return list(hws), note
+
+    def _resolve_uncached(self, word: str, loose: bool = False) -> tuple[list[Headword], str]:
         hws = self._direct(word, loose=loose)
         if not hws:
             hws = self._absolutive(word)                             # praṇāmya: the absolutive before a chance noun reading
@@ -1041,16 +1107,17 @@ class SanskritLexicon:
                 continue
             found.sort(key=lambda h: 0 if h.pos == "abs" else 1)       # tiras-kṛtya: the absolutive of karoti before the gerundive of kṛt
             seen_lemmas = set()
+            cited = PREFIX_CITED.get(p, p)                             # adhy-abhāṣata: the prefix adhi
             for v in found[:3]:
                 base = v.lemma if v.pos in VERB_POS or v.pos in ("abs", "inf") else v.stem
-                lemma = p + base
+                lemma = join_prefix(p, rest, base)
                 if lemma in seen_lemmas:
                     continue
                 seen_lemmas.add(lemma)
-                grammar = re.sub(r"\bof (\S+)", lambda m: f"of {p}{m.group(1)}", v.grammar.split(";")[0], count=1)   # prp of tyajati -> prp of parityajati
-                out.append(Headword(id=self._new_id(), lemma=lemma, stem=lemma, pos=v.pos, grammar=grammar + f"; prefixed {p}-" + (f"; BHS {why}" if why else ""),
+                grammar = re.sub(r"\bof (\S+)", lambda m: f"of {join_prefix(p, rest, m.group(1))}", v.grammar.split(";")[0], count=1)   # prp of tyajati -> prp of parityajati
+                out.append(Headword(id=self._new_id(), lemma=lemma, stem=lemma, pos=v.pos, grammar=grammar + f"; prefixed {cited}-" + (f"; BHS {why}" if why else ""),
                                     meaning=self._meaning(lemma)[0] or v.meaning, meaning_lit="", meaning_2=v.meaning_2,
-                                    construction=(p + v.construction) if v.construction else "", root=v.root, root_meaning=v.root_meaning,
+                                    construction=join_prefix(p, rest, v.construction) if v.construction else "", root=v.root, root_meaning=v.root_meaning,
                                     family_set="", plus_case="", parses=list(v.parses), kind=""))
             if out:
                 break
@@ -1059,7 +1126,14 @@ class SanskritLexicon:
     # -- the regular inflection of a dictionary stem ---------------------------------------------------
 
     def _by_model(self, key: str, loose: bool = False) -> list[Headword]:
-        """``tathāgatasya``: the ending read on a model stem, the stem looked up in the dictionaries."""
+        """``tathāgatasya``: the ending read on a model stem, the stem looked up in the dictionaries. Memoised like
+        :meth:`_resolve`."""
+        ck = (key, bool(loose))
+        if ck not in self._model_cache:
+            self._model_cache[ck] = self._by_model_uncached(key, loose)
+        return list(self._model_cache[ck])
+
+    def _by_model_uncached(self, key: str, loose: bool = False) -> list[Headword]:
         out: list[Headword] = []
         for (final, gender), model in MODELS.items():
             for ending_len in range(1, 8):
@@ -1150,7 +1224,7 @@ class SanskritLexicon:
                     parses = [p for p in parses if p.startswith(pos)]   # amithyātvāt: the neuter, as mithyātva is
                 if not parses:
                     continue
-                h = self._make_noun(stem, pos, parses, f"{pos}; regular inflection of {stem} (as {model})")
+                h = self._make_noun(stem, pos, parses, f"{pos}; regular inflection of {stem} (as {model})", name_ok=self._name_form(stem, parses))
                 if taddhita and not h.construction:
                     h.construction = f"{base} + {taddhita}"
                 if abstract:
@@ -1187,8 +1261,8 @@ class SanskritLexicon:
 
     def _nominal(self, stem: str) -> bool:
         """A nominal stem: one vidyut inflects, or a dictionary headword that is not only a verbal root."""
-        if stem.endswith(("āt", "asya", "ena", "ebhyaḥ", "ānām")) and stem not in ("vidyut", "marut", "sampat", "anena"):
-            return False
+        if stem.endswith(CASE_ENDINGS) and stem != "anena" and not (self.cologne is not None and self.cologne.genders(stem) & {"masc", "fem", "nt", "adj"}):
+            return False                                             # tasmāt, tasya: a case form is no stem; daurmanasya, phena, śyena are (the dictionaries give their gender)
         if self.cologne is not None and (self.cologne.is_root(stem) or self.cologne.is_letter(stem)) and stem not in SHORT_MEMBERS:
             return False
         if stem in self.stems or any(v in self.stems for v in nasal_variants(stem)):
@@ -2063,7 +2137,7 @@ class SanskritLexicon:
                 if comp_hws:
                     cq = max(cq, (self._good_info(key) or (0, 0))[1])   # anupādāna: as sound as upādāna, not as upā + dāna
                 # prajñāpāramitācaryāṃ: a pair with a compound in it (prajñāpāramitā + caryāṃ) cuts the compound itself, and wins only when that is poor
-                oblique_split = len(pair[0]) == 2 and pair[0][0].endswith(("āt", "asya", "ena", "ebhyaḥ", "ānām")) and comp_size >= 4 if pair else False
+                oblique_split = len(pair[0]) == 2 and pair[0][0].endswith(CASE_ENDINGS) and comp_size >= 4 if pair else False
                 simple = (bool(pair) and (all(self._plain_word(p) for p in pair[0]) or oblique_split) and not self._negated_word(key)
                           and not any(pair[0][k].endswith("aḥ") and pair[0][k + 1][:1] == "a" for k in range(len(pair[0]) - 1)))   # sādhano'pāyāḥ would be written
                 if os.environ.get("KAVI_DEBUG_SPLITS"):
@@ -2121,7 +2195,6 @@ HONORIFICS = {"bhagavat", "bhagavant", "bhagavān", "āyuṣmat", "āyuṣmant",
               "tathāgata", "arhat", "arhant", "samyaksaṃbuddha", "samyaksambuddha", "buddha", "sugata", "jina", "śāstṛ", "śāstar",
               "bhikṣu", "bhikṣuṇī", "śrāmaṇera", "upāsaka", "upāsikā", "śramaṇa", "brāhmaṇa", "parivrājaka", "bodhisattva", "mahāsattva",
               "śrāvaka", "deva", "mahārāja", "ācārya", "upādhyāya", "sthavira", "mahāsthavira", "ārya"}
-CAPITALISED = {"bhagavat", "bhagavant", "bhagavān", "tathāgata", "sugata", "samyaksaṃbuddha", "samyaksambuddha", "buddha", "jina", "śāstṛ", "bhadanta"}
 CORE_TERMS = {"dharma", "saṃgha", "saṅgha", "nirvāṇa", "karman", "karma", "skandha", "dhyāna", "samādhi", "prajñā", "śīla", "duḥkha", "anitya",
               "anātman", "tṛṣṇā", "āsrava", "sūtra", "vinaya", "abhidharma", "smṛti", "vipaśyanā", "śamatha", "maitrī", "karuṇā", "muditā",
               "upekṣā", "bodhi", "saṃsāra", "vipāka", "kleśa", "nīvaraṇa", "bodhyaṅga", "indriya", "ṛddhipāda", "smṛtyupasthāna", "mārga",
@@ -2156,7 +2229,7 @@ def _parse_order(parse: str, pos: str) -> tuple:
     return (own, _NUMBER_ORDER.get(number, 3), _CASE_ORDER.get(case, 9), {"masc": 0, "nt": 1, "fem": 2}.get(gender, 3))
 
 
-def _classify(stem: str, meaning: str, pali: str = "") -> str:
+def _classify(stem: str, meaning: str) -> str:
     """'name', 'honorific', 'technical' or '' for a Sanskrit headword."""
     s = stem.lower()
     if s in HONORIFICS:

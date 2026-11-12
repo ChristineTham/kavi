@@ -12,6 +12,11 @@ PRONOUNS: set[str] = set(SABBANAMA)
 
 def set_language(lexicon) -> None:
     """Pāli or Sanskrit, by the lexicon in use: the name the prompts use, the spelling of the nasal, the pronoun list."""
+    if isinstance(lexicon, str):                       # "sa" or "pi", for a script without a lexicon in hand
+        if lexicon in ("sa", "sanskrit", "Sanskrit"):
+            from .sanskrit import SanskritLexicon as lexicon
+        else:
+            lexicon = None
     LANGUAGE["name"] = getattr(lexicon, "language", "Pāli")
     LANGUAGE["code"] = getattr(lexicon, "code", "pi")
     LANGUAGE["niggahita"] = LANGUAGE["code"] == "pi"

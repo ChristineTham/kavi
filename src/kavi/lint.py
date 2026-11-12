@@ -44,9 +44,8 @@ HONORIFICS = {
     "tathāgata", "arhat", "arhant", "samyaksaṃbuddha", "samyaksambuddha", "buddha", "sugata", "jina", "śāstṛ", "śāstar",
     "bhikṣu", "bhikṣuṇī", "śrāmaṇera", "upāsaka", "upāsikā", "śramaṇa", "brāhmaṇa", "parivrājaka", "bodhisattva", "mahāsattva",
     "śrāvaka", "mahāśrāvaka", "deva", "mahārāja", "ācārya", "upādhyāya", "sthavira", "mahāsthavira", "ārya",
-    "lokanāyaka", "lokanātha", "nāyaka", "nātha", "mahānubhāva", "kulaputra", "piṇḍapātika",
+    "lokanāyaka", "lokanātha", "nāyaka", "nātha", "mahānubhāva", "kulaputra",
     "lokavid", "puruṣadamyasārathi", "vidyācaraṇasampanna",
-    "śubhanimitta", "puṇyābhisaṃskāra", "kuśalamūla", "kalyāṇamitra", "dharmabhāṇaka", "saddharma", "cakravartin", "gāthā",
     # Pāli
     "bhagavā", "āyasmā", "bhante", "āvuso", "bhikkhu", "satthā", "satthar", "kulaputta"
 }
@@ -64,16 +63,8 @@ HONORIFIC_MEANINGS: dict[str, str] = {
     "lokanāyaka": "guide of the world", "lokanātha": "protector of the world", "nāyaka": "guide", "nātha": "protector",
     "lokavid": "knower of the world", "puruṣadamyasārathi": "unsurpassed guide of persons to be tamed",
     "vidyācaraṇasampanna": "endowed with knowledge and conduct",
-    "mahānubhāva": "of great might", "piṇḍapātika": "alms-collector",
+    "mahānubhāva": "of great might",
     "śrāvaka": "disciple", "mahāśrāvaka": "great disciple",
-    "śubhanimitta": "auspicious sign",
-    "puṇyābhisaṃskāra": "meritorious mental construction",
-    "kuśalamūla": "root of merit",
-    "kalyāṇamitra": "spiritual friend",
-    "dharmabhāṇaka": "dharma preacher",
-    "saddharma": "true dharma",
-    "cakravartin": "universal monarch",
-    "gāthā": "verse",
 }
 
 HONORIFIC_VARIANTS: dict[str, list[str]] = {
@@ -157,11 +148,6 @@ HONORIFIC_VARIANTS: dict[str, list[str]] = {
     "nāyaka": ["the guide", "guide", "the leader", "leader"],
     "nātha": ["the protector", "protector", "the lord", "lord"],
     "mahānubhāva": ["of great might", "mighty one", "O mighty one", "the mighty one", "one of great might"],
-    "piṇḍapātika": [
-        "alms-food eater", "alms food eater", "alms-eater", "alms eater",
-        "alms-gatherer", "alms gatherer", "alms-collector", "alms collector",
-        "one who eats alms-food", "eater of alms-food",
-    ],
     "śrāvaka": ["disciples", "disciple", "hearers", "hearer"],
     "mahāśrāvaka": ["great disciples", "great disciple"],
     "buddha": [
@@ -186,25 +172,6 @@ HONORIFIC_VARIANTS: dict[str, list[str]] = {
         "possessed of knowledge and conduct", "accomplished in knowledge and conduct",
         "endowed with wisdom and conduct", "perfect in wisdom and conduct",
     ],
-    "śubhanimitta": [
-        "auspicious sign", "auspicious signs", "auspicious omen", "auspicious omens",
-        "good sign", "good signs", "good omen", "good omens", "favorable sign", "favorable omen",
-    ],
-    "puṇyābhisaṃskāra": [
-        "meritorious formation", "meritorious formations",
-        "meritorious mental construction", "meritorious mental constructions",
-        "meritorious action", "meritorious actions",
-    ],
-    "kuśalamūla": ["root of merit", "roots of merit"],
-    "kalyāṇamitra": ["spiritual friend", "spiritual friends", "virtuous friend", "virtuous friends", "spiritual guide", "spiritual guides"],
-    "dharmabhāṇaka": [
-        "preacher of the doctrine", "preachers of the doctrine",
-        "dharma preacher", "dharma preachers", "dharma-preacher", "dharma-preachers",
-        "preacher of the Dharma", "preachers of the Dharma", "preacher of dharma", "preachers of dharma",
-    ],
-    "saddharma": ["true dharma", "true teaching", "true doctrine", "good dharma"],
-    "cakravartin": ["universal monarch", "universal monarchs", "wheel-turning king", "wheel-turning kings", "emperor", "emperors"],
-    "gāthā": ["verses", "verse", "stanzas", "stanza"],
 }
 
 ARTICLE_RE = r"(?:\b(?:the|a|an|this|that|these|those)\s+)?"
@@ -235,7 +202,7 @@ def _clean_dict_gloss(raw: str) -> str:
     s = re.sub(r"^[^:;]{1,30}:\s*", "", (raw or "").split(";")[0]).strip()
     s = re.sub(r"\[[^\]]*\]", "", s)
     s = re.sub(r"\b(?:mf\([^)]*\)n|mfn|m|f|n|ind|cl\.\s*\d+\.?|P\.|Ā\.|See\s+p\.\s*\d+[^,.;]*)\b\.?\s*", "", s)
-    s = re.sub(r"\s*\([^)]*(?:RV|AV|MBh|Kāv|Pāṇ|cf\.|lit\.)[^)]*\)", "", s)
+    s = re.sub(r"\s*\([^)]*(?:RV|AV|MBh|Kāv|Pāṇ|cf\.|lit\.|See|s\.v|&c\.)[^)]*\)", "", s)
     s = re.sub(r",\s*(?:Buddh|Jain|Ved|RV|AV|MBh|Kāv)\.?.*$", "", s)
     s = re.sub(r"\s*'\s*'\s*$", "", s).strip(" ,.;:-—")
     return s
@@ -270,7 +237,12 @@ def _plural_variants(phrases: list[str]) -> list[str]:
     return sorted(set(out), key=len, reverse=True)
 
 
-TERM_SPAN_RE = re.compile(r"`[^`]+` \([^()]*\)")
+TERM_SPAN_RE = re.compile(r"`([^`]+)` \(([^()]*)\)")
+
+
+def term_key(term: str) -> str:
+    """The key under which a `term` (gloss) span counts as one term across its inflected forms."""
+    return re.sub(r"[ṃṁḥoāaeīiūs]+$", "", term.lower())
 
 
 def _protected(text: str) -> list[tuple[int, int]]:
@@ -283,7 +255,7 @@ def _inside(pos: int, spans: list[tuple[int, int]]) -> bool:
 
 def lint(analyses: list[Analysis], translation: str, glossary: dict[str, str] | None = None,
          apply: bool = True, alternatives: dict[str, list[str]] | None = None,
-         gloss_honorifics: bool = False, glossed: set[str] | None = None) -> tuple[str, list[Finding]]:
+         glossed: set[str] | None = None) -> tuple[str, list[Finding]]:
     """Check ``translation`` against the word analyses; return (possibly amended translation, findings)."""
     text = translation
     findings: list[Finding] = []
@@ -293,12 +265,11 @@ def lint(analyses: list[Analysis], translation: str, glossary: dict[str, str] | 
     if glossed is None:
         glossed = set()
     is_sa = LANGUAGE.get("code") == "sa"
-    if is_sa and apply:
+    if apply:
         text = re.sub(r"\bThus (?:have I|I have|it was|was) heard(?:\s+by me)?\b", "Thus heard by me", text, flags=re.I)
+    if is_sa and apply:
         text = re.sub(r"^yaduta\b", "Namely", text, flags=re.I)
         text = re.sub(r"\byaduta\b", "namely", text, flags=re.I)
-        text = re.sub(r"\b(?:by |with )?the bodhisattva mahāsattva who turns the wheel of (?:the )?dharma as soon as he produces the thought of (?:awakening|bodhi)\b", "with the bodhisattva mahāsattva Sahacittotpādadharmacakrapravartin", text, flags=re.I)
-        text = re.sub(r"\b(?:by |with )?the bodhisattva mahāsattva who does not lay down his burden\b", "with the bodhisattva mahāsattva Anikṣiptadhura", text, flags=re.I)
 
     # glossary terms inside compounds (nāmarūpanirodho) also fix the rendering of the term wherever it appears: the
     # term must be a word or a compound member of the sentence, not a substring of one (bhava is not in bhavet, whose
@@ -329,6 +300,8 @@ def lint(analyses: list[Analysis], translation: str, glossary: dict[str, str] | 
         if gstem in glossary and not glossary[gstem]:
             continue                                   # a context-dependent term (dhamma): the translator's rendering stands
 
+        is_real_name = bool(h and h.kind == "name")
+        base_kind = h.kind if (h and h.kind != "name") else ""
         if is_sa:
             h_parses = [h.parses] if isinstance(h.parses, str) else (h.parses if h else [])
             a_parses = [a.parses] if isinstance(getattr(a, "parses", None), str) else (getattr(a, "parses", []) or [])
@@ -336,9 +309,9 @@ def lint(analyses: list[Analysis], translation: str, glossary: dict[str, str] | 
                 (bool(h_parses) and all("voc" in p for p in h_parses)) or (bool(a_parses) and all("voc" in p for p in a_parses))
             )
             is_hon = (h and h.kind != "name" and (h.kind == "honorific" or h.stem.lower() in HONORIFICS or h.stem.lower() in HONORIFIC_MEANINGS)) or is_voc
-            kind = "name" if (h and h.kind == "name") else ("honorific" if is_hon else ("technical" if gstem in glossary else (h.kind if h else "")))
+            kind = "name" if is_real_name else ("honorific" if is_hon else ("technical" if gstem in glossary else base_kind))
         else:
-            kind = "technical" if gstem in glossary else h.kind
+            kind = "technical" if gstem in glossary else ("name" if is_real_name else base_kind)
 
         if kind == "name":
             stem = h.stem.capitalize()
@@ -379,43 +352,14 @@ def lint(analyses: list[Analysis], translation: str, glossary: dict[str, str] | 
                     phrases += [f"O {form}", f"O, {form}", f"Oh {form}", f"O {surface}", f"O, {surface}", f"Oh {surface}"]
                 phrases = sorted(set(phrases), key=len, reverse=True)
 
-                meaning = HONORIFIC_MEANINGS.get(key) or HONORIFIC_MEANINGS.get(surface.lower()) or (_clean_dict_gloss(h.meaning) if h and h.meaning and (h.kind == "honorific" or is_voc) else "")
-                if meaning and (len(meaning) > 35 or any(x in meaning for x in ("(", ")", "[", "]", "〔", "〕", "=", "fr.", "q.v", "ib", "Skt", "Pali")) or re.search(r"\d", meaning)):
-                    meaning = ""
-                if gloss_honorifics and key not in glossed and surface.lower() not in glossed:
-                    rep_text = f"`{form}` ({meaning})" if meaning else form
-                    hit = _replace_english(text, phrases, rep_text, apply, every=False, keep_article=True, plural_aware=True)
-                    if hit:
-                        text, phrase = hit
-                        glossed.add(key)
-                        glossed.add(surface.lower())
-                        findings.append(Finding(surface, f"honorific/vocative rendered in English as '{phrase}'",
-                                                f"written as `{form}` ({meaning or phrase}) on first use" if apply else f"write `{form}` ({meaning or phrase}) on first use", "fix" if apply else "ask"))
-                    elif not (_present(form, text) or _present(key[:5], text)):
-                        findings.append(Finding(surface, f"honorific/vocative ({meaning}) does not appear untranslated",
-                                                f"put '{form}' in place of whatever English stands for it"))
-                    else:
-                        bare_pat = re.compile(ARTICLE_RE + r"\b(?:" + re.escape(form) + "|" + re.escape(surface) + r")s?\b", re.I)
-                        bm = next((m for m in bare_pat.finditer(text) if not _inside(m.start(), _protected(text))), None)
-                        if bm and meaning and apply:
-                            art = ARTICLE_ONLY_RE.match(bm.group(0))
-                            a_str = art.group(1) if art else ""
-                            text = text[:bm.start()] + f"{a_str}`{form}` ({meaning})" + text[bm.end():]
-                        glossed.add(key)
-                        glossed.add(surface.lower())
-                    if apply:
-                        hit_rest = _replace_english(text, phrases, form, apply, every=True, keep_article=True, plural_aware=True)
-                        if hit_rest:
-                            text, _ = hit_rest
-                else:
-                    hit = _replace_english(text, phrases, form, apply, every=True, keep_article=True, plural_aware=True)
-                    if hit:
-                        text, phrase = hit
-                        findings.append(Finding(surface, f"honorific/vocative rendered in English as '{phrase}'",
-                                                f"replaced by '{form}'" if apply else f"replace by '{form}'", "fix" if apply else "ask"))
-                    elif not (_present(form, text) or _present(key[:5], text)):
-                        findings.append(Finding(surface, f"honorific/vocative does not appear untranslated",
-                                                f"put '{form}' in place of whatever English stands for it"))
+                hit = _replace_english(text, phrases, form, apply, every=True, keep_article=True, plural_aware=True)
+                if hit:
+                    text, phrase = hit
+                    findings.append(Finding(surface, f"honorific/vocative rendered in English as '{phrase}'",
+                                            f"replaced by '{form}'" if apply else f"replace by '{form}'", "fix" if apply else "ask"))
+                elif not (_present(form, text) or _present(key[:5], text)):
+                    findings.append(Finding(surface, f"honorific/vocative does not appear untranslated",
+                                            f"put '{form}' in place of whatever English stands for it"))
                 o_pat = re.compile(r"\b(?:O|Oh),?\s+(" + re.escape(form) + r")\b", re.I)
                 text = o_pat.sub(r"\1", text)
         elif kind == "technical":
@@ -548,7 +492,6 @@ def lint(analyses: list[Analysis], translation: str, glossary: dict[str, str] | 
             ("śāstṛ", "Śāstṛ"),
             ("buddha", "Buddha"),
             ("jina", "Jina"),
-            ("piṇḍapātika", "piṇḍapātika"),
             ("lokanāyaka", "lokanāyaka"),
             ("lokanātha", "lokanātha"),
             ("nāyaka", "nāyaka"),
@@ -561,26 +504,14 @@ def lint(analyses: list[Analysis], translation: str, glossary: dict[str, str] | 
             ("śrāvaka", "śrāvaka"),
             ("bodhisattva", "bodhisattva"),
             ("mahāsattva", "mahāsattva"),
-            ("śubhanimitta", "śubhanimitta"),
-            ("puṇyābhisaṃskāra", "puṇyābhisaṃskāra"),
-            ("kuśalamūla", "kuśalamūla"),
-            ("kalyāṇamitra", "kalyāṇamitra"),
-            ("dharmabhāṇaka", "dharmabhāṇaka"),
-            ("saddharma", "saddharma"),
-            ("cakravartin", "cakravartin"),
-            ("gāthā", "gāthā"),
         ]
+        # only the honorifics this unit's source contains (a word or a compound member): "teacher" is not
+        # śāstṛ in a sentence about an ācārya
+        in_source = present | {h.stem for a in analyses for h in a.headwords[:3]}
         for h_key, h_form in hon_checks:
             phrases = HONORIFIC_VARIANTS.get(h_key, [])
-            if not phrases:
+            if not phrases or not any(x == h_key or (x.startswith(h_key[:-1]) and len(x) <= len(h_key) + 2) for x in in_source):
                 continue
-            meaning = HONORIFIC_MEANINGS.get(h_key, "")
-            if gloss_honorifics and h_key not in glossed:
-                rep_text = f"`{h_form}` ({meaning})" if meaning else h_form
-                hit = _replace_english(text, phrases, rep_text, apply=True, every=False, keep_article=True, plural_aware=True)
-                if hit:
-                    text, _ = hit
-                    glossed.add(h_key)
             hit_rest = _replace_english(text, phrases, h_form, apply=True, every=True, keep_article=True, plural_aware=True)
             if hit_rest:
                 text, _ = hit_rest
@@ -620,16 +551,20 @@ def normalise_terms(text: str) -> str:
     # "dependent origination (*paṭiccasamuppāda*)": English gloss followed by the italic Pāḷi — make it the term form
     text = re.sub(r"\b([A-Za-z][\w -]{2,40}?) \(\*{1,2}([a-zāīūṃṅñṭḍṇḷ]+)\*{1,2}\)", r"`\2` (\1)", text)
     text = re.sub(r"`[^`]+` \((`[^`]+` \([^()]*\))\)", r"\1", text)
-    seen: set[str] = set()
+    return gloss_once(text, set())
 
+
+def gloss_once(text: str, seen: set[str]) -> str:
+    """The first `word` (gloss) of each term stays; a later one becomes the plain word (Sanskrit) or the plain
+    gloss (Pāli). ``seen`` carries the terms already met, across calls."""
     def once(m: re.Match) -> str:
-        key = re.sub(r"[ṃoāaṁs]+$", "", m.group(1).lower())
+        key = term_key(m.group(1))
         if key in seen:
             return m.group(1) if LANGUAGE.get("code") == "sa" else m.group(2)
         seen.add(key)
         return m.group(0)
 
-    return re.sub(r"`([^`]+)` \(([^()]*)\)", once, text)
+    return TERM_SPAN_RE.sub(once, text)
 
 
 def _fix_tense(text: str, meanings: list[str], apply: bool) -> tuple[str, str, str] | None:
@@ -640,9 +575,8 @@ def _fix_tense(text: str, meanings: list[str], apply: bool) -> tuple[str, str, s
             verb = e.split(" ")[0]
             if verb[:3] == base[:3]:
                 now = verb if aux in ("was", "is") else (verb[:-1] if verb.endswith("s") else verb)
-                rest = e[len(verb):]
                 if apply:
-                    text = text[: m.start()] + now + rest.split(";")[0].rstrip() * 0 + text[m.end():]
+                    text = text[: m.start()] + now + text[m.end():]
                 return text, m.group(0), now
     return None
 
@@ -658,6 +592,8 @@ def _replace_english(text: str, phrases: list[str], replacement: str | None, app
     """Find the first of ``phrases`` in ``text`` (with an optional article or vocative 'O ') and replace it — every
     occurrence for names and honorifics, the first only for a technical term, which becomes `word` (matched phrase)."""
     spans = _protected(text)
+    lowered = {p.lower() for p in phrases}
+    first: str | None = None
     for phrase in phrases:
         # "name and form" also matches "name-and-form"
         body = r"[\s-]+".join(re.escape(w) for w in phrase.split())
@@ -678,7 +614,9 @@ def _replace_english(text: str, phrases: list[str], replacement: str | None, app
                         return f"{art}`{gf}` ({core})"
                     rep = replacement or ""
                     head_w = core.split(" of ")[0].strip().split()[-1].lower() if " of " in core.lower() else core.strip().split()[-1].lower() if core.strip() else ""
-                    is_pl = head_w.endswith("s") and not head_w.endswith(("ss", "us", "is"))
+                    whole = core.strip().lower()            # "verses" beside "verse" is a plural; "alms" is not
+                    is_pl = (head_w.endswith("s") and not head_w.endswith(("ss", "us", "is"))
+                             and (whole[:-1] in lowered or whole[:-3] + "y" in lowered or whole not in lowered))
                     if plural_aware and is_pl:
                         m_term = re.match(r"^`([^`]+)` \(([^()]+)\)$", rep)
                         if m_term:
@@ -698,6 +636,11 @@ def _replace_english(text: str, phrases: list[str], replacement: str | None, app
                     core = m.group(0)[len(pref_m.group(1)) if pref_m else 0:]
                     text = text[: m.start()] + sub(m) + text[m.end():]
                     return text, core
-                text = pat.sub(sub, text) if every else text[: m.start()] + sub(m) + text[m.end():]
+                if every:                                 # every alternative of the list, not the first that occurs
+                    text = pat.sub(sub, text)
+                    spans = _protected(text)
+                    first = first or phrase
+                    continue
+                text = text[: m.start()] + sub(m) + text[m.end():]
             return text, phrase
-    return None
+    return (text, first) if first else None
