@@ -1,10 +1,15 @@
 """The pipeline without models: a fake pool returns canned drafts and reviews, so the segment → checker →
 review → render loop can be tested offline."""
+from pathlib import Path
+
 import pytest
 from kavi.config import Settings
 from kavi.dpd import DPD
 from kavi.models import Reply
 from kavi.pipeline import Translator
+
+SA_DATA = Path(__file__).resolve().parents[1] / "data"
+HAVE_SA = (SA_DATA / "vidyut" / "kosha").exists() and (SA_DATA / "sanskrit.sqlite").exists()
 
 s = Settings()
 pytestmark = pytest.mark.skipif(not s.dpd_db.exists(), reason="dpd.db not available")
@@ -197,3 +202,95 @@ def test_the_gate_judges_the_output_not_a_list_of_phrases():
     assert ok
     ok, why = is_strictly_better("He [masculine nominative singular] went.", "He went.", "He went.", [], {})
     assert not ok and "grammatical" in why
+
+
+def test_the_grounded_sentence_stands_unless_something_is_wrong_with_it(dpd, tmp_path):
+    # Stage 2 differs widely from the draft and calls the Bhagavā "the Blessed One": the checker mends that, and the
+    # grounded sentence (the one the word glosses belong to) is kept; a sentence with grammatical tags is not
+    text = "Ekaṃ samayaṃ bhagavā sāvatthiyaṃ viharati.\n\nTatra kho bhagavā bhikkhū āmantesi.\n"
+    res, _, _ = _fake_run(dpd, tmp_path, text, [
+        ("Translate the following", "[1] Once the Bhagavā stayed near Sāvatthī.\n[2] There the Bhagavā spoke to the bhikkhū."),
+        ("Sentence: Ekaṃ samayaṃ", '{"words": [{"n": 1, "parse": 1, "gloss": "one"}], "translation": "At one time the Blessed One dwells in Sāvatthī."}'),
+        ("Sentence: Tatra kho", '{"words": [{"n": 1, "parse": 1, "gloss": "there"}], "translation": "There [indeclinable] indeed the Bhagavā [masculine nominative singular] addressed the bhikkhū."}'),
+    ])
+    assert res.units[0].final == "At one time the Bhagavā dwells in Sāvatthī." and not res.units[0].rejected
+    assert res.units[1].final == "There the Bhagavā spoke to the bhikkhū." and "grammatical" in res.units[1].rejected[0]
+
+
+def test_a_verse_line_is_read_with_its_verse_and_a_meaning_is_said_once(dpd, tmp_path):
+    text = "Yadā have pātubhavanti dhammā,\nĀtāpino jhāyato brāhmaṇassa.\n"
+    _, translate, _ = _fake_run(dpd, tmp_path, text, [("Translate the following", "[1] x\n[2] y")])
+    prompt = next(c[-1]["content"] for c in translate.calls if c[-1]["content"].startswith("Sentence: Ātāpino"))
+    assert "one line of this verse" in prompt and "Yadā have pātubhavanti dhammā," in prompt
+    assert " — 〃" in prompt
+
+
+@pytest.mark.skipif(not HAVE_SA, reason="Sanskrit data not installed (kavi setup --sanskrit)")
+def test_the_discourse_prompt_lists_names_and_words_of_address():
+    # what Stage 1 is told to keep bare, and which forms can be words of address (the model seldom finds them)
+    from kavi.interlinear import analyse_tokens
+    from kavi.language import set_language
+    from kavi.pipeline import Unit
+    from kavi.sanskrit import SanskritLexicon
+    from kavi.segment import Block
+    lx = SanskritLexicon(SA_DATA)
+    set_language(lx)
+    try:
+        verse = Block("para", [], text="x")
+        lines = ["sarvapāramitābhis tvaṃ nirmalābhir anindite", "sakṛd apy āśaye śuddhe yas tvāṃ vidhivad īkṣate",
+                 "buddhaiḥ pratyekabuddhaiś ca śrāvakaiś ca niṣevitā", "kṛpayā lokanāthais tvam ucyase ca na cocyase"]
+        units = [Unit(block=verse, source=ln, masked=ln, tokens=analyse_tokens(lx, ln)) for ln in lines]
+        kept = Translator._kept_words(units)
+        assert {"Buddha", "pratyekabuddha", "śrāvaka", "lokanātha"} <= set(kept.values())
+        address = Translator._address_words(units, kept)
+        assert "anindite" in address and "śuddhe" not in address          # a vocative; a locative beside its noun
+        title = [Unit(block=Block("heading", [], text="x"), source=lines[2], masked=lines[2], tokens=analyse_tokens(lx, lines[2]))]
+        assert Translator._kept_words(title) == {} and Translator._address_words(title, {}) == []   # a title names; it addresses no one
+    finally:
+        set_language(None)
+
+
+def test_a_word_is_kept_bare_or_offered_as_an_address_never_both(dpd):
+    from kavi.interlinear import analyse_tokens
+    from kavi.language import set_language
+    from kavi.pipeline import Unit
+    from kavi.segment import Block
+    set_language(dpd)
+    line = "Acchariyaṃ bhante abbhutaṃ bhante."                       # bhante: the headword's stem is bhante, its lemma bhavant
+    u = Unit(block=Block("para", [], text="x"), source=line, masked=line, tokens=analyse_tokens(dpd, line))
+    kept = Translator._kept_words([u])
+    assert kept == {"bhante": "Bhante"} and Translator._address_words([u], kept) == []
+    title = Unit(block=Block("heading", [], text="x"), source="Mahānidānasutta", masked="Mahānidānasutta",
+                 tokens=analyse_tokens(dpd, "Mahānidānasutta"))
+    assert Translator._kept_words([title]) == {}                       # a title takes its English in parentheses: it is not "kept bare"
+
+
+def test_the_backtick_curb_belongs_to_stage_one(dpd, tmp_path):
+    from kavi.interlinear import analyse_tokens, backtick_curb, prompt_for
+    from kavi.language import set_language
+    from kavi.models import review_rules
+    text = "Ekaṃ samayaṃ bhagavā sāvatthiyaṃ viharati. Tatra kho bhagavā bhikkhū āmantesi.\n"
+    _, translate, _ = _fake_run(dpd, tmp_path, text, [("Translate the following", "[1] x\n[2] y")])
+    macro = next(c[-1]["content"] for c in translate.calls if "Translate the following" in c[-1]["content"])
+    assert backtick_curb() in macro                                    # Stage 1 needs it to keep the model off backticks
+    assert "An apostrophe at the start of a word" not in macro         # a Sanskrit avagraha rule: Pāli quotations begin with ‘
+    set_language(dpd)
+    assert backtick_curb() not in prompt_for("Evaṃ me sutaṃ", analyse_tokens(dpd, "Evaṃ me sutaṃ"), {}, [], initial_draft="x")
+    assert backtick_curb() not in review_rules()                       # Stage 2 and the review write technical terms in backticks too
+
+
+def test_stage1_only_redrafts_what_the_cache_holds(dpd, tmp_path):
+    text = "Ekaṃ samayaṃ bhagavā sāvatthiyaṃ viharati. Tatra kho bhagavā bhikkhū āmantesi.\n"
+    answers = [("Translate the following", "[1] At one time the Bhagavā was dwelling at Sāvatthī.\n[2] There indeed the Bhagavā addressed the monks."),
+               ("Sentence: Ekaṃ samayaṃ", '{"words": [{"n": 1, "parse": 1, "gloss": "one"}], "translation": "At one time the Bhagavā was dwelling at Sāvatthī."}'),
+               ("Sentence: Tatra kho", '{"words": [{"n": 1, "parse": 1, "gloss": "there"}], "translation": "There indeed the Bhagavā addressed the monks."}')]
+    st = Settings()
+    st.max_rounds = 0
+    st.cache_dir = tmp_path
+    tr = Translator(st, dpd, FakePool(FakeModel("Qwen3.8-27B-bf16", answers), FakeModel("x", [])), progress=lambda m: None)
+    tr.translate_markdown(text)                                        # a full run fills the cache
+    assert tr.cache
+    again = FakeModel("Qwen3.8-27B-bf16", [("Translate the following", "[1] Draft one.\n[2] Draft two.")])
+    res = Translator(st, dpd, FakePool(again, FakeModel("x", [])), progress=lambda m: None).translate_markdown(text, stage1_only=True)
+    assert "Draft one." in res.markdown and "Draft two." in res.markdown     # the draft is the output, not the source
+    assert len(again.calls) == 1                                       # the discourse call only; the cache is not consulted

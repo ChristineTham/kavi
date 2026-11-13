@@ -43,7 +43,7 @@ HONORIFICS = {
     "bhagavat", "bhagavant", "bhagavān", "bhagavan", "āyuṣmat", "āyuṣmant", "āyuṣman", "bhadanta", "bhadra", "bho", "bhavat", "bhavant",
     "tathāgata", "arhat", "arhant", "samyaksaṃbuddha", "samyaksambuddha", "buddha", "sugata", "jina", "śāstṛ", "śāstar",
     "bhikṣu", "bhikṣuṇī", "śrāmaṇera", "upāsaka", "upāsikā", "śramaṇa", "brāhmaṇa", "parivrājaka", "bodhisattva", "mahāsattva",
-    "śrāvaka", "mahāśrāvaka", "deva", "mahārāja", "ācārya", "upādhyāya", "sthavira", "mahāsthavira", "ārya",
+    "śrāvaka", "mahāśrāvaka", "pratyekabuddha", "deva", "mahārāja", "ācārya", "upādhyāya", "sthavira", "mahāsthavira", "ārya",
     "lokanāyaka", "lokanātha", "nāyaka", "nātha", "mahānubhāva", "kulaputra",
     "lokavid", "puruṣadamyasārathi", "vidyācaraṇasampanna",
     # Pāli

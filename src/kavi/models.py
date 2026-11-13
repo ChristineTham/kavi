@@ -18,6 +18,7 @@ from pathlib import Path
 
 from . import ollama
 from .dpd import Analysis, analysis_table, reference_pairs, special_words
+from .interlinear import vocative_rule
 from .language import LANGUAGE
 
 # --------------------------------------------------------------------------------------
@@ -374,7 +375,7 @@ def review_rules() -> str:
 1. Literal and faithful: every {lang} word is rendered, in the grammatical form the analysis gives (case, number, tense, person, voice); nothing is added, nothing is left out, nothing is paraphrased away. Where the dictionary offers several meanings, the one the sentence needs is chosen; a wrong homonym is an error.
 2. No commentary, explanation or interpretation, and no assumption that the text is religious unless its words say so.
 3. Refinement, not replacement: correct only specific errors of meaning, case, tense or terminology; keep the draft's natural English sentence structure where it is right. An idiom is rendered by the English it expresses, never by a grammatical tag in brackets or parentheses.
-4. Personal names, place names and titles of texts stay untranslated in their {lang} stem form; honorifics and titles of persons stay untranslated exactly as they stand in the text, with no explanation in parentheses.
+4. Personal names, place names and titles of texts stay untranslated in their {lang} stem form; honorifics and titles of persons stay untranslated exactly as they stand in the text, with no explanation in parentheses. {vocative_rule()}.
 5. A word used as a technical term stays in {lang}, in backticks with a short English gloss in parentheses on its first occurrence, like `term` (gloss), and {after}; a word used in its ordinary sense is translated plainly, never left in {lang}.
 6. Particles are rendered, not dropped.
 7. Markdown formatting and any %%number%% placeholders stay exactly where they are.
@@ -459,6 +460,11 @@ def is_degenerate(out: str, src: str) -> bool:
             if counts[s] >= 3:
                 return True
     return False
+
+
+def unusable(text: str, src: str) -> bool:
+    """A reply that is empty, chatter or a refusal (``is_meta``), or a degenerate repetition of the source."""
+    return not text or is_meta(text) or is_degenerate(text, src)
 
 
 @dataclass

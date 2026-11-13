@@ -30,16 +30,16 @@ from .config import Settings
 from .dpd import DPD, VERB_POS, Analysis, analyse_text, analysis_table
 from .glossary import honorific_form
 from .interlinear import (
-    Token, analyse_tokens, format_mantra,
-    is_source, modern, parse_answer, prompt_for, terms_of, token_terms, reconcile_case, system_prompt, units_pieces,
+    Token, analyse_tokens, backtick_curb, format_mantra,
+    is_source, modern, parse_answer, prompt_for, terms_of, token_terms, reconcile_case, system_prompt, units_pieces, vocative_rule,
     _clean_quotes, _conventional,
 )
 from .language import LANGUAGE, set_language
 from .lint import Finding, lint, HONORIFICS, HONORIFIC_MEANINGS, _clean_dict_gloss, _inside, _protected, gloss_once, term_key
 from .models import (
-    ModelPool, clear_metal_cache, is_degenerate, is_meta, is_mitra_translate,
+    ModelPool, clear_metal_cache, is_mitra_translate,
     parse_review, review_prompt, strip_wrapper,
-    translate_messages_revision,
+    translate_messages_revision, unusable,
 )
 from .segment import (
     Block, HAS_LETTERS_RE, PH_RE, parse_markdown, placeholders_ok, protect,
@@ -200,6 +200,7 @@ class Result:
 
 
 
+LAYOUT_MARKS_RE = re.compile(r"\s*(?:/{1,2}|\|{1,2}|‖|।{1,2}|॥)\s*$")     # the daṇḍa that closes a line or a verse
 GRAMMAR_TAG_RE = re.compile(
     r"\[(?:neuter|masculine|feminine|nominative|accusative|instrumental|dative|ablative|genitive|locative|vocative|"
     r"singular|plural|dual|past|present|future|optative|imperative)[^\]]*\]|\(\s*past\s*\)", re.I)
@@ -217,6 +218,14 @@ def _untranslated_verbs(text: str, analyses: list[Analysis]) -> set[str]:
     return out
 
 
+def _plain_fault(cand: str, ref: str, analyses: list[Analysis]) -> str | None:
+    """What both gates refuse outright: grammatical tags, and a source verb left as it stands that ``ref`` had rendered."""
+    if GRAMMAR_TAG_RE.search(cand):
+        return "contains raw grammatical metadata"
+    left = _untranslated_verbs(cand, analyses) - _untranslated_verbs(ref, analyses)
+    return "leaves a source verb untranslated: " + ", ".join(sorted(left)) if left else None
+
+
 def is_strictly_better(candidate: str, current: str, base: str, analyses: list[Analysis], glossary: dict[str, str],
                        alternatives: dict[str, list[str]] | None = None) -> tuple[bool, str]:
     """May ``candidate`` replace ``current``? Not if it carries grammatical tags or leaves a source verb
@@ -228,11 +237,8 @@ def is_strictly_better(candidate: str, current: str, base: str, analyses: list[A
         return False, "candidate empty"
     if cand == curr:
         return False, "identical to current"
-    if GRAMMAR_TAG_RE.search(cand):
-        return False, "contains raw grammatical metadata"
-    left = _untranslated_verbs(cand, analyses) - _untranslated_verbs(curr, analyses)
-    if left:
-        return False, "leaves a source verb untranslated: " + ", ".join(sorted(left))
+    if (why := _plain_fault(cand, curr, analyses)):
+        return False, why
 
     _, findings_cand = lint(analyses, cand, glossary, apply=False, alternatives=alternatives)
     _, findings_curr = lint(analyses, curr, glossary, apply=False, alternatives=alternatives)
@@ -247,6 +253,28 @@ def is_strictly_better(candidate: str, current: str, base: str, analyses: list[A
     if f1_cand >= min_f1:
         return True, "valid refinement preserving base sentence structure"
     return False, f"diverged too far from base English into word-salad (f1={f1_cand:.1f} < {min_f1})"
+
+
+def grounded_fault(candidate: str, draft: str, unit: Unit, glossary: dict[str, str],
+                   alternatives: dict[str, list[str]] | None = None) -> str | None:
+    """Why the sentence grounded on the dictionary's parses (Stage 2) may not replace the discourse draft (Stage 1);
+    None when it may. The grounded sentence is the one the word glosses belong to, so it stands unless something is
+    plainly wrong with it: it is not measured by its likeness to the ungrounded draft, and what the checker mends by
+    itself (an honorific in English, a glossary alternative) is mended in both before they are compared."""
+    cand = candidate.strip()
+    if unusable(cand, unit.source):
+        return "no usable sentence"
+    analyses = unit.analyses
+    if (why := _plain_fault(cand, draft, analyses)):
+        return why
+    if unit.kept and not placeholders_ok(cand, unit.masked) and placeholders_ok(draft, unit.masked):
+        return "a placeholder was lost or invented"
+
+    def open_of(text: str) -> int:
+        return sum(1 for f in lint(analyses, text, glossary, alternatives=alternatives)[1] if f.severity == "ask")
+
+    more = open_of(cand) - open_of(draft)
+    return f"{more} more open finding(s) than the draft after the checker's fixes" if more > 0 else None
 
 
 class Translator:
@@ -448,10 +476,9 @@ class Translator:
         if not translation:
             translation = unit.initial_draft or " ".join(t.gloss for t in unit.tokens if not t.punct)
         elif unit.initial_draft and not unit.from_cache:     # a cached entry is the reviewed text: it stands
-            is_better, reason = is_strictly_better(translation, unit.initial_draft, unit.initial_draft, unit.analyses, glossary, alternatives)
-            if not is_better:
-                if translation.strip() != unit.initial_draft.strip():
-                    unit.rejected.append(f"grounded sentence set aside for the discourse draft ({reason}): {translation}")
+            reason = grounded_fault(translation, unit.initial_draft, unit, glossary, alternatives)
+            if reason:
+                unit.rejected.append(f"grounded sentence set aside for the discourse draft ({reason}): {translation}")
                 translation = unit.initial_draft
         fixed, findings = lint(unit.analyses, translation, glossary, alternatives=self.s.glossary_alternatives,
                                glossed=self._glossed)
@@ -488,7 +515,9 @@ class Translator:
             return
 
         model = self.models.get("translate")
-        user_prompt = prompt_for(unit.masked or unit.source, unit.tokens, self.s.glossary_map, context or [], initial_draft=unit.initial_draft)
+        whole = protect(unit.block.text)[0] if unit.verse else ""     # a verse line is read with the rest of its verse
+        user_prompt = prompt_for(unit.masked or unit.source, unit.tokens, self.s.glossary_map, context or [],
+                                 initial_draft=unit.initial_draft, whole=whole)
         no_word_prompt = user_prompt.replace(
             'repeating the word, in this form: {"words": [{"n": 1, "word": "evaṁ", "parse": 1, "gloss": "thus"}, {"n": 2, "word": "me", "parse": 3, "gloss": "by me"}], "translation": "…"}',
             'in this form: {"words": [{"n": 1, "parse": 1, "gloss": "thus"}, {"n": 2, "parse": 3, "gloss": "by me"}], "translation": "…"}',
@@ -512,7 +541,7 @@ class Translator:
             unit.answered = bool(gloss and translation)
             plain = strip_wrapper(reply.text)
             if (not translation and not choice and plain and "{" not in plain and reply.finish_reason != "length"
-                    and not is_meta(plain) and not is_degenerate(plain, unit.source)):
+                    and not unusable(plain, unit.source)):
                 translation = plain                      # a model that answers with the translation alone
             elif not translation and unit.initial_draft:
                 translation = unit.initial_draft
@@ -537,7 +566,7 @@ class Translator:
                 max_tok *= 2                             # the same budget would only be cut again
                 continue
             out = strip_wrapper(reply.text)
-            if not out or is_degenerate(out, source) or is_meta(out):
+            if unusable(out, source):
                 continue
             if single_line and "\n" in out:
                 out = " ".join(out.split())
@@ -588,7 +617,7 @@ class Translator:
                                          markdown="*" in u.source or "_" in u.source) or before
             if after == before and res.revised.get(n, "").strip() not in ("", before):
                 rev = res.revised[n].strip()             # the reviewer's own line, when the translator gave none
-                if not is_degenerate(rev, u.source) and not is_meta(rev):
+                if not unusable(rev, u.source):
                     after = " ".join(rev.split()) if single else rev
 
             # the checker's fixes first, then one decision on the text that would go on the page
@@ -651,8 +680,8 @@ class Translator:
             m = re.match(r"^\[?(\d+)\]?[\.:\s\-]+(.*)$", line)
             if m:
                 idx = int(m.group(1))
-                val = re.sub(r"[\s|‖]+$", "", m.group(2).strip()).strip()
-                if val:
+                val = re.sub(r"[\s|‖/]+$", "", m.group(2).strip()).strip()
+                if val and idx not in out:               # a number given twice: the first stands (the second is an echo)
                     out[idx] = val
             elif out:
                 last_idx = max(out.keys())
@@ -672,16 +701,71 @@ class Translator:
                 out.append(f"{modern(stem)} -> {gloss}" + (f" (never {never})" if never else ""))
         return "; ".join(out)
 
-    def _contextual_macro_pass(self, units: list[Unit]) -> None:
-        """Initial macro pass: translate the text in context-bounded chunks to capture
-        narrative flow, discourse coreference, and natural phrasing."""
+    @staticmethod
+    def _kept_words(chunk: list[Unit]) -> dict[str, str]:
+        """The names, titles and honorifics of this chunk, stem -> as it is to be written: what the draft must leave
+        as it is. A word the dictionary knows as a name but also reads as an ordinary word is left out (it may be a
+        description here), and so is a stem that is only a homonym behind the first reading. A heading names the
+        text and takes its English in parentheses, so it contributes nothing."""
+        out: dict[str, str] = {}
+        for u in chunk:
+            if u.block.kind == "heading":
+                continue
+            for t in u.tokens:
+                first = t.candidates[0] if t.candidates else None
+                h = first.headword if first else None
+                if h is None:
+                    continue
+                proper = h.kind == "name" or t.surface[:1].isupper()      # Rāhulabhadra: one name, not rāhula + bhadra
+                stems = {h.stem} if proper else {h.stem} | {m.replace("ṁ", "ṃ") for m in first.members}
+                for stem in sorted(stems):
+                    if stem in HONORIFICS:
+                        out.setdefault(stem, modern(honorific_form(stem, stem, [], h.family_set)))
+                    elif t.only_names:
+                        out.setdefault(stem, modern(stem.capitalize()))
+        return out
+
+    @staticmethod
+    def _address_words(chunk: list[Unit], kept: dict[str, str]) -> list[str]:
+        """The words that can be words of address, which a model seldom finds for itself: the lexicon's own first
+        reading is a vocative singular, or the form allows a vocative singular and no nominative and no reading as a
+        verb, a pronoun or an indeclinable. Left out: names and titles (they stay bare), headings, and a locative that
+        agrees with the noun beside it."""
+        def locative(t: Token, first: bool = False) -> bool:
+            return any(p.case == "loc" and p.number == "sg" for p in (t.candidates[:1] if first else t.candidates))
+
+        out: dict[str, None] = {}
+        for u in chunk:
+            if u.block.kind == "heading":                # a title names; it addresses no one
+                continue
+            words = [t for t in u.tokens if not t.punct]
+            for n, t in enumerate(words):
+                c = t.candidates
+                if not (len(t.surface) >= 4 and c and c[0].kind == "noun"):
+                    continue
+                if t.only_names or (c[0].headword is not None and c[0].headword.stem in kept):
+                    continue
+                if locative(t) and any(locative(x, first=True) for x in words[max(0, n - 1):n] + words[n + 1:n + 2]):
+                    continue                             # āśaye śuddhe: a locative with the noun it agrees with
+                first = c[0].case == "voc" and c[0].number == "sg"          # the lexicon's own first reading (kalyāṇi)
+                by_form = (not any(p.kind in ("verb", "ind", "affix", "pron") for p in c)
+                           and any(p.case == "voc" and p.number == "sg" for p in c)
+                           and not any(p.case == "nom" and p.number in ("sg", "pl") for p in c))
+                if first or by_form:
+                    out[modern(t.surface)] = None
+        return list(out)
+
+    def _contextual_macro_pass(self, units: list[Unit], force: bool = False) -> None:
+        """Initial macro pass: translate the text in context-bounded chunks to capture narrative flow, discourse
+        coreference and natural phrasing. Sentences whose Stage 2 answer is cached are not redrafted unless ``force``
+        (for work on this prompt, whose output is wanted for every unit)."""
         active = [u for u in units if not u.kept_source and u.source.strip()]
         if len(active) <= 1:
             return
         for u in active:                                 # analysed once: draft() reuses the tokens
             if not u.tokens:
                 u.tokens = analyse_tokens(self.dpd, u.masked or u.source)
-        uncached = {id(u) for u in active if self._key(u.source, u.tokens) not in self.cache}
+        uncached = {id(u) for u in active if force or self._key(u.source, u.tokens) not in self.cache}
         if not uncached:
             return
         paths = getattr(self.models, "paths", None)      # the path decides, without loading the model for it
@@ -697,26 +781,55 @@ class Translator:
         voc_examples = "Śāriputra, bhagavan, bhikṣavaḥ" if is_sa else "bhikkhave, bhante, Ānanda"
         idioms = ("   - 'yāvat' closing an abbreviated list means 'and so forth up to'.\n"
                   "   - Correlatives 'yad ... tad' mean 'whatever ... that'.\n" if is_sa else "")
+        avagraha = (" An apostrophe at the start of a word stands for an elided a-: read 'x as ax, which often makes the word "
+                    "a negative.") if is_sa else ""
 
         for chunk in chunks:
-            source_lines = [f"[{i}] {modern(u.masked or u.source).strip()}" for i, u in enumerate(chunk, 1)]
+            opens = [True] + [a.block is not b.block for a, b in zip(chunk, chunk[1:])]   # a paragraph or a verse begins
+            source_lines = []
+            for i, (u, new) in enumerate(zip(chunk, opens), 1):    # a blank line between paragraphs and between verses
+                if new and i > 1:
+                    source_lines.append("")
+                source_lines.append(f"[{i}] {LAYOUT_MARKS_RE.sub('', modern(u.masked or u.source).strip())}")
             term_rules = self._term_rules(chunk)
-            user_msg = (
-                f"Translate the following {lang_name} text into literal, rationalist English, segment by segment.\n\n"
-                f"Rules:\n"
-                f"1. Strictly literal and rationalist: Render every word faithfully and drop no particle; maintain fluent English syntax without theological, devotional, or supernatural idioms.\n"
-                f"2. Names and Text Titles: Leave personal names, place names, and honorific stems untranslated (e.g. {name_examples}). The title of the text remains untranslated, with its English translation in parentheses on first occurrence.\n"
-                f"3. Vocatives: Leave vocative forms untranslated without Victorian titles or parentheticals (e.g. {voc_examples}).\n"
-                f"4. Doctrinal Terms: Use the glossary's renderings"
-                + (f": {term_rules}." if term_rules else ".") + " Never use 'enlightenment' or 'noble truth'.\n"
-                f"5. Formulas and Canonical Idioms:\n"
-                f"   - 'evaṃ me sutaṃ' / 'evaṃ mayā śrutam' must be rendered as 'Thus heard by me'.\n"
+            kept = self._kept_words(chunk)
+            bare = list(dict.fromkeys(kept.values()))
+            address = self._address_words(chunk, kept)
+            kept_rule = (" These words of this text are names and titles: write each bare, exactly as shown (the plural with an "
+                         "English -s), wherever it occurs and in whatever case form, never in backticks and never followed by "
+                         f"English in parentheses: {', '.join(bare)}.") if bare else ""
+            address_rule = (" By their form these words of this text can be words of address (the same form may be another case: "
+                            "the sentence decides); where one addresses someone and is not a name or title, it is written "
+                            f"`word` (English) with the word exactly as shown here: {', '.join(address)}."
+                            " Only a word of this list may be written in backticks, and only where it addresses someone; a word "
+                            "that is not on the list is never in backticks, even when it describes the one addressed.") if address else ""
+            terms_clause = f": {term_rules}." if term_rules else "."
+            rules = [
+                "Strictly literal and rationalist: Render every word faithfully and drop no particle; maintain fluent English syntax without theological, devotional, or supernatural idioms.",
+                f"Names and Text Titles: Leave personal names, place names, and honorific stems untranslated (e.g. {name_examples}).{kept_rule}"
+                " The title of the text remains untranslated, with its English translation in parentheses on its first occurrence only; later occurrences are the title alone.",
+                f"Vocatives: Leave names, titles and customary forms of address in the vocative untranslated, without Victorian titles or parentheticals (e.g. {voc_examples}). "
+                f"{vocative_rule()}. {backtick_curb()}.{address_rule}",
+                f"Doctrinal Terms: Use the glossary's renderings{terms_clause} Never use 'enlightenment' or 'noble truth'."
+                " Before using a glossary rendering, look at the word's case: a glossary word standing alone in the instrumental or ablative beside a verb"
+                " is normally an adverb of manner, and is translated as an English adverb."
+                " A glossary term is written as its English rendering only, never left untranslated.",
+                "Formulas and Canonical Idioms:\n"
+                "   - 'evaṃ me sutaṃ' / 'evaṃ mayā śrutam' must be rendered as 'Thus heard by me'.\n"
                 + idioms +
-                f"   - Mantras: italicise the incantation, followed by its English meaning in parentheses: *mantra* (translation).\n"
-                f"6. Punctuation: Use standard English punctuation (periods, commas, semicolons). Never output daṇḍas (| or ||).\n"
-                f"7. Format: Output one translated line per numbered segment in the form '[n] Translation text'.\n"
-                f"8. Placeholders: reproduce every %%number%% marker of a segment exactly, once, in its translation.\n\n"
-                f"{lang_name} text:\n" + "\n".join(source_lines)
+                "   - Mantras: italicise the incantation, followed by its English meaning in parentheses: *mantra* (translation).",
+                "Punctuation: Use standard English punctuation (periods, commas, semicolons); a paragraph or verse begins with a capital and ends with a full stop. The marks /, //, | and || are layout, not text: never write them.",
+                "Format: Output one translated line per numbered segment in the form '[n] Translation text'. Each number appears exactly once, and its line is English only, never the source words copied.",
+                "Construing: Numbered segments with no blank line between them are one paragraph or one verse, and their words construe together."
+                " Before writing it, find its finite verb and its subject: a word in the accusative is never the subject, an adjective takes the case of the noun it agrees with (not of the nearest noun), and a negation negates the verb of its own clause."
+                " Then give each numbered segment the English of its own words: add no noun or clause that has no word in that segment, and leave out no word of it."
+                + avagraha,
+                "Placeholders: reproduce every %%number%% marker of a segment exactly, once, in its translation.",
+            ]
+            user_msg = (
+                f"Translate the following {lang_name} text into literal, rationalist English, segment by segment.\n\nRules:\n"
+                + "\n".join(f"{i}. {r}" for i, r in enumerate(rules, 1))
+                + f"\n\n{lang_name} text:\n" + "\n".join(source_lines)
             )
             messages = [
                 {"role": "system", "content": f"You are an expert translator of classical {lang_name} Buddhist texts into literal English."},
@@ -730,9 +843,16 @@ class Translator:
             parsed = self._parse_numbered_translations(reply.text)
             if reply.finish_reason == "length" and parsed:
                 parsed.pop(max(parsed))                  # the last line was cut off: no draft is better than half of one
-            for i, u in enumerate(chunk, 1):
-                if parsed.get(i):
-                    u.initial_draft = self._fit_placeholders(u, parsed[i])
+            gloss_after_name = re.compile(r"`?\b(" + "|".join(map(re.escape, bare)) + r")(s?)`?\s*\([^()]*\)", re.I) if bare else None
+            for i, (u, new) in enumerate(zip(chunk, opens), 1):
+                if not parsed.get(i):
+                    continue
+                text = parsed[i]
+                if gloss_after_name:                     # a name or title takes no explanation in parentheses
+                    text = gloss_after_name.sub(r"\1\2", text)
+                if new:
+                    text = text[:1].upper() + text[1:]   # a paragraph or verse begins with a capital
+                u.initial_draft = self._fit_placeholders(u, text)
 
     # -- document rendering ------------------------------------------------------------
 
@@ -744,7 +864,7 @@ class Translator:
         return lines
 
     def translate_markdown(self, text: str, segments: list[tuple[str, str]] | None = None,
-                           interlinear: bool = False, review: bool = True) -> Result:
+                           interlinear: bool = False, review: bool = True, stage1_only: bool = False) -> Result:
         t0 = time.time()
         calls0 = self.calls
         blocks = parse_markdown(text)
@@ -790,11 +910,12 @@ class Translator:
             self.models.release("review")
 
         # Stage 1: Initial macro translation pass (discourse context across segments)
-        self._contextual_macro_pass(units_all)
+        self._contextual_macro_pass(units_all, force=stage1_only)
 
         # Stage 2: Unit-level dictionary analysis, candidate selection, and translation refinement
+        staged = [] if stage1_only else units_all         # the discourse draft alone is wanted, as the model gave it
         interval = max(1, self.s.metal_cache_interval)
-        for n, u in enumerate(units_all, 1):
+        for n, u in enumerate(staged, 1):
             self.progress(f"[{u.number}] {u.source[:60]}{'…' if len(u.source) > 60 else ''}")
             self.draft(u, recent[-self.s.context_segments:] if self.s.context_segments > 0 else None)
             recent.append((modern(u.source), u.final))
@@ -804,11 +925,11 @@ class Translator:
                 clear_metal_cache()
 
         # Stage 3: Agentic review loop
-        if review and self.s.max_rounds > 0 and units_all:
+        if review and self.s.max_rounds > 0 and staged:
             if two_models:                               # and the translator goes before the review: the reviewer's own
                 self.models.release("translate")         # revised lines are then used, with no call back to the translator
                 self._translator_released = True
-            for bi, batch in enumerate(self._batches(units_all), 1):
+            for bi, batch in enumerate(self._batches(staged), 1):
                 for r in range(1, self.s.max_rounds + 1):
                     self.progress(f"review batch {bi}, round {r} ({len(batch)} segments) …")
                     found = self.review_batch(batch)
@@ -816,7 +937,7 @@ class Translator:
                         break
 
         # Deterministically enforce technical term first-use formatting across the document
-        self._enforce_first_use_conventions(units_all)
+        self._enforce_first_use_conventions(staged)
 
         # Re-render blocks with any revised translations from review rounds
         para_groups: dict[int, list[Unit]] = {}
@@ -866,7 +987,7 @@ class Translator:
                     b_fp.kind = "para"
                     b_fp.translation = " ".join(u.first_pass for u in b_units)
 
-        for u in units_all:                              # the reviewed text replaces the draft's entry
+        for u in staged:                                 # the reviewed text replaces the draft's entry
             self._remember(u)
         self.save_cache()
         clear_metal_cache()
@@ -875,7 +996,7 @@ class Translator:
         inter_md = render(blocks_inter)
         fp_en_md = render(blocks_fp)
         return Result(
-            markdown=inter_md if interlinear else en_md,
+            markdown=fp_en_md if stage1_only else (inter_md if interlinear else en_md),
             units=units_all,
             seconds=time.time() - t0,
             model_calls=self.calls - calls0,

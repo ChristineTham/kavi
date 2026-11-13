@@ -27,6 +27,7 @@ from pathlib import Path
 from .dpd import DPD, Analysis, Headword, VERB_POS, normalise, parse_words
 from .grammar import to_symbol
 from .language import LANGUAGE, PRONOUNS
+from .lint import _clean_dict_gloss
 from .segment import PH_RE, split_sentences
 
 NIGGAHITA = str.maketrans({"ṃ": "ṁ"})
@@ -291,6 +292,11 @@ class Token:
             return Parse("punct", self.surface)
         return Parse("unknown", modern(self.surface))
 
+    @property
+    def only_names(self) -> bool:
+        """Every reading the dictionary offers for this word is a name."""
+        return bool(self.candidates) and all(c.headword is not None and c.headword.kind == "name" for c in self.candidates)
+
 
 def token_terms(t: "Token") -> set[str]:
     """The stems a token stands for: its headword and that headword's compound members (ṃ spelling), so that a
@@ -455,6 +461,27 @@ SYSTEM_TEMPLATE = (
 )
 
 
+# the author's rule of 2026-11-13 on words of address: one wording for the prompts of every stage
+VOCATIVE_RULE = ("Every word of address (a word in the vocative case) is written in one of two ways only: a name, a title, "
+                 "a kinship word or a customary form of address as the bare {lang} word; any other vocative, one that "
+                 "describes the one addressed, as `source-word` (English), like `anagha` (faultless one), where the "
+                 "backticks hold the {lang} word copied letter for letter as it stands and the parentheses hold the "
+                 "English, never the reverse. Never turn a word of address into plain English, a relative clause or "
+                 "square brackets, and never supply words such as '[you who are]'")
+# Stage 1 only: the model there keeps to the rule above only with this curb; the later stages write technical terms in
+# backticks as well and must not be told otherwise
+BACKTICK_CURB = ("Backticks are for a describing word of address and for nothing else: every other noun, adjective, "
+                 "participle or compound, in whatever case, is English only, with no {lang} beside it")
+
+
+def vocative_rule() -> str:
+    return VOCATIVE_RULE.format(lang=LANGUAGE["name"])
+
+
+def backtick_curb() -> str:
+    return BACKTICK_CURB.format(lang=LANGUAGE["name"])
+
+
 def system_prompt() -> str:
     return SYSTEM_TEMPLATE.format(lang=LANGUAGE["name"])
 
@@ -479,8 +506,37 @@ def format_mantra(src: str, tr: str) -> str:
     return f"{intro}{mantra} ({content})."
 
 
-def prompt_for(unit_text: str, tokens: list[Token], glossary: dict[str, str], context: list[tuple[str, str]], initial_draft: str = "") -> str:
+_CITATION = r"[A-ZĀŚṚ][\w.]{0,12}"                                 # RV, AV, Kathās, TejobUp: where a sense is attested
+CITATION_RE = re.compile(rf"^{_CITATION}$")
+TRAILING_CITATION_RE = re.compile(rf",\s*{_CITATION}$")
+
+
+def _shown_meaning(p: Parse) -> str:
+    """A candidate's meaning as the prompt shows it: a Cologne entry without its headword echo, grammar tags and
+    citations, and never the length of a dictionary column."""
+    m = p.meaning or ""
+    if LANGUAGE["code"] == "sa":
+        parts = []
+        for part in m.split(";"):                                     # (Parse.meaning holds at most three pieces)
+            part = _clean_dict_gloss(part)
+            part = re.sub(r"^\d+\.\s*", "", part)
+            part = re.sub(r"^\S*[—˚]\S*\s+", "", part)                 # nir—vikalpa, pra-jñā—pāramitā: the headword again
+            head, _, rest = part.partition(" ")
+            if rest and head.replace("-", "") == p.lemma:
+                part = rest
+            part = TRAILING_CITATION_RE.sub("", part).strip(" ,")
+            if part and not CITATION_RE.match(part):
+                parts.append(part)
+        m = "; ".join(parts) or m
+    return (m[:157].rstrip() + "…") if len(m) > 160 else m
+
+
+def prompt_for(unit_text: str, tokens: list[Token], glossary: dict[str, str], context: list[tuple[str, str]], initial_draft: str = "",
+               whole: str = "") -> str:
     lines = [f"Sentence: {unit_text}"]
+    if whole and whole.strip() != unit_text.strip():
+        lines.append("\nThe sentence is one line of this verse, whose words construe together across its lines (translate only the "
+                     f"sentence above, in the sense the whole verse gives it):\n{whole}")
     if initial_draft:
         lines.append(f"\nInitial draft translation from discourse context:\n\"{initial_draft}\"")
     if context:
@@ -493,23 +549,28 @@ def prompt_for(unit_text: str, tokens: list[Token], glossary: dict[str, str], co
         lines.append(f"{n}. {modern(t.surface)}")
         if not t.candidates:
             lines.append("   (not in the dictionary: gloss it as best you can)")
+        said = None                                   # a headword's meaning once, not on each of its ten forms
         for c, p in enumerate(t.candidates, 1):
-            lines.append(f"   {c}. {p.lemma} ({p.describe()}) — {p.meaning or '—'}")
+            meaning = _shown_meaning(p) or "—"
+            lines.append(f"   {c}. {p.lemma} ({p.describe()})" + (f" — {meaning}" if (p.lemma, meaning) != said else " — 〃"))
+            said = (p.lemma, meaning)
     present = terms_of(tokens)
     used = [f"{modern(k)} = {v}" for k, v in glossary.items() if v and k in present]
     rules = [
         "For every word choose the candidate whose grammatical form the sentence requires: an adjective or participle agrees with its noun in gender, number and case; the verb's person and number are its subject's; a locative absolute takes the locative participle.",
         "The gloss renders only that word in that form, in one to four English words, with the preposition the case needs where English needs one (\"by me\", \"in the night\", \"of the week\"), and no explanation.",
     ]
+    epithets = vocative_rule() + "; its word gloss is the English alone."
     if LANGUAGE["code"] == "sa":
         rules.extend([
             f"Vocatives and honorifics must NOT be translated: in both word glosses and the sentence translation, leave any vocative address and any honorific untranslated as it stands in the text (e.g. Bhagavān, bhikṣavaḥ, āyuṣmān, bhadanta, Śāriputra, Maitreya; never 'the Blessed One', 'venerable', 'venerable sir', 'O monks', 'monks', etc.). Names stay in their {LANGUAGE['name']} stem form.",
+            epithets,
             "The title of a text stays in its untranslated Sanskrit form, with its literal English translation in parentheses on first occurrence.",
             "A Buddhist technical term appears on its first use as `term` (English gloss), with the gloss the glossary gives; on subsequent uses, write the plain term.",
             "For a mantra or dhāraṇī, give the original text in italics followed by the English translation in parentheses: *mantra* (translation).",
         ])
     else:
-        rules.append(f"Names stay in their {LANGUAGE['name']} stem form; honorifics and titles stay as they stand in the text (Bhagavā, bhikkhave, bhante).")
+        rules.append(f"Names stay in their {LANGUAGE['name']} stem form; honorifics and titles stay as they stand in the text (Bhagavā, bhikkhave, bhante). " + epithets)
     if PH_RE.search(unit_text):
         rules.append("The sentence contains placeholder markers of the form %%number%% (links, footnote marks, tags): reproduce every one of them exactly, once, in the translation, in the same position relative to the surrounding words, and never translate, renumber or drop one.")
     if initial_draft:

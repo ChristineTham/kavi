@@ -124,7 +124,8 @@ def cmd_translate(args) -> int:
     for text, name, rel in inputs:
         if name:
             sys.stderr.write(f"== {name}\n")
-        result = tr.translate_markdown(text, segments=segments, interlinear=bool(args.interlinear), review=s.max_rounds > 0)
+        result = tr.translate_markdown(text, segments=segments, interlinear=bool(args.interlinear), review=s.max_rounds > 0,
+                                       stage1_only=args.stage1)
         if args.out:
             out = target(args.out, rel, "translation.md", lambda r: r.with_name(r.stem + ".en" + r.suffix))
             out.write_text(result.markdown, encoding="utf-8")
@@ -528,6 +529,7 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--report", help="also write the review report (issues and revisions per segment) here")
     t.add_argument("--rounds", type=int, help="review/revise rounds (default 5)")
     t.add_argument("--first-pass", dest="first_pass_out", help="also write the initial discourse macro-pass (first pass reference) to this file")
+    t.add_argument("--stage1", action="store_true", help="stop after the discourse pass and give its draft as the output, redrafting every sentence whether cached or not (for work on the Stage 1 prompt; nothing is cached)")
     t.add_argument("--think", action="store_true", help="let the review model think before answering (slower)")
     t.add_argument("--no-cache", action="store_true", help="ignore and do not write the translation cache")
     t.add_argument("--model", help=f"single model for both roles: an Ollama name (default {DEFAULT_MODEL}), a local MLX folder or a Hugging Face MLX repo")

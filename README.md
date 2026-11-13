@@ -219,6 +219,8 @@ uv run kavi app                                  # Streamlit interface
 * `--rounds N`: Maximum review critique rounds per batch (default 5).
 * `--glossary FILE`: Technical terms glossary (default `src/kavi/glossaries/default.txt`).
 * `--batch-words N`: Review batch size in source words (default 400).
+* `--first-pass FILE`: Also write the Stage 1 discourse draft of the whole run to FILE.
+* `--stage1`: Stop after Stage 1 and give its draft as the output (for work on the Stage 1 prompt; nothing is cached).
 
 ---
 
@@ -226,3 +228,6 @@ uv run kavi app                                  # Streamlit interface
 
 Code: CC0. The Digital Pāḷi Dictionary (DPD) is CC BY-NC-SA 4.0 (consulted, not redistributed). Vidyut is MIT.
 Cologne Digital Sanskrit Dictionaries are CC BY-NC-SA 3.0 (consulted, not redistributed).
+GRETIL's Sanskrit editions are CC BY-NC-SA 4.0: the English translations of the Prajñāpāramitāstotra in `docs/eval/`
+(the reference and the model's Stage 1 draft; they hold no Sanskrit text) keep the edition's front matter with its
+attribution and licence, and are under that licence, not CC0.
