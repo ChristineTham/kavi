@@ -1,6 +1,6 @@
 # Stage 1 on the Prajñāpāramitāstotra: the prompt loop of 2026-11-13
 
-The default model (`gemma4:26b-mlx` through Ollama) made the Stage 1 discourse draft of Rāhulabhadra's hymn (21 verses,
+`gemma4:26b-mlx` through Ollama (the default model at the time) made the Stage 1 discourse draft of Rāhulabhadra's hymn (21 verses,
 42 lines, one model call of about 20 seconds) six times; each draft was judged line by line against
 `Prajñāpāramitāstotra-ref.md` and the conventions, and the prompt was revised between rounds. Drafts 5 and 6 used the
 same prompt. `Prajñāpāramitāstotra-gemma-26b.md` is the draft made afterwards with the frozen prompt (chrF 60.4,
