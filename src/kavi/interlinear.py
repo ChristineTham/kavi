@@ -281,6 +281,7 @@ class Token:
     chosen: Parse | None = None
     gloss: str = ""
     punct: bool = False
+    src: str = ""                      # the word of the text a sandhi or compound split part was cut from
 
     @property
     def parse(self) -> Parse:
@@ -293,9 +294,26 @@ class Token:
         return Parse("unknown", modern(self.surface))
 
     @property
+    def first(self) -> Parse | None:
+        """The lexicon's first reading of the word, or nothing (punctuation, an unknown word)."""
+        return self.candidates[0] if self.candidates else None
+
+    @property
     def only_names(self) -> bool:
         """Every reading the dictionary offers for this word is a name."""
         return bool(self.candidates) and all(c.headword is not None and c.headword.kind == "name" for c in self.candidates)
+
+
+PRIVATIVE_PREFIXES = ("niṣ", "niś", "nis", "nir", "niḥ")       # nis- as the sandhi writes it before a consonant
+
+
+def privative_rest(stem: str) -> str:
+    """niṣprapañca -> prapañca, nirvikalpa -> vikalpa: the word a Sanskrit compound with the privative nis- ends in, which
+    the dictionaries list as one headword and so give no members; a glossary term inside it keeps its rendering."""
+    for p in PRIVATIVE_PREFIXES:
+        if stem.startswith(p) and len(stem) - len(p) >= 4:
+            return stem[len(p):]
+    return ""
 
 
 def token_terms(t: "Token") -> set[str]:
@@ -307,12 +325,14 @@ def token_terms(t: "Token") -> set[str]:
     if t.analysis and t.analysis.headwords:
         heads.append(t.analysis.headwords[0])
     out: set[str] = set(t.chosen.members if t.chosen else [])
-    if t.analysis:                                       # dukkhaṃ: the adverb's entry first, the noun dukkha behind it
-        out.update(h.stem for h in t.analysis.headwords[:3])
+    if t.analysis and t.analysis.headwords and t.analysis.headwords[0].pos == "ind":
+        out.update(h.stem for h in t.analysis.headwords[:3])      # dukkhaṃ: the adverb's entry first, the noun dukkha behind it
     for h in heads:
         out.add(h.stem)
         if h.pos in VERB_POS:                            # bhavati is "bhava + ti": a verbal stem, not the noun bhava
             continue
+        if LANGUAGE["code"] == "sa" and (rest := privative_rest(h.stem)):
+            out.add(rest)
         for cons in (h.compound_construction, h.construction):
             for alt in re.sub(r"</?b>", "", cons or "").split("|"):
                 out.update(m.strip() for m in alt.split(" + ") if m.strip())
@@ -375,7 +395,7 @@ def analyse_tokens(dpd: DPD, text: str) -> list[Token]:
             if parts:
                 for p in parts:
                     sub = dpd.analyse(p)
-                    tokens.append(Token(p, normalise(p), sub, _candidates_of(sub, p)))
+                    tokens.append(Token(p, normalise(p), sub, _candidates_of(sub, p), src=surface))
                 continue
         if a.headwords:
             cands = _candidates_of(a, surface)
@@ -394,7 +414,7 @@ def analyse_tokens(dpd: DPD, text: str) -> list[Token]:
                         should_split = True
             if should_split:
                 for part in split.analyses:
-                    tokens.append(Token(part.key, part.key, part, _candidates_of(part, part.key)))
+                    tokens.append(Token(part.key, part.key, part, _candidates_of(part, part.key), src=surface))
                 continue
             tokens.append(Token(surface, key, a, cands))
             continue
@@ -405,7 +425,7 @@ def analyse_tokens(dpd: DPD, text: str) -> list[Token]:
             continue
         if split is not None and split.analyses and any(x.headwords for x in split.analyses):
             for part in split.analyses:
-                tokens.append(Token(part.key, part.key, part, _candidates_of(part, part.key)))
+                tokens.append(Token(part.key, part.key, part, _candidates_of(part, part.key), src=surface))
             continue
         tokens.append(Token(surface, key, a))
     return tokens
@@ -471,7 +491,8 @@ VOCATIVE_RULE = ("Every word of address (a word in the vocative case) is written
 # Stage 1 only: the model there keeps to the rule above only with this curb; the later stages write technical terms in
 # backticks as well and must not be told otherwise
 BACKTICK_CURB = ("Backticks are for a describing word of address and for nothing else: every other noun, adjective, "
-                 "participle or compound, in whatever case, is English only, with no {lang} beside it")
+                 "participle or compound, in whatever case, is English only, with no {lang} beside it. Never write 'O' before a "
+                 "word of address; a word of address that is not a name, a title, a kinship word or a customary form is always `word` (English)")
 
 
 def vocative_rule() -> str:

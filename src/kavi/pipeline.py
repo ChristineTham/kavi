@@ -18,10 +18,12 @@ Output rendering:
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import re
 import sys
 import time
+import unicodedata
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
@@ -31,10 +33,10 @@ from .dpd import DPD, VERB_POS, Analysis, analyse_text, analysis_table
 from .glossary import honorific_form
 from .interlinear import (
     Token, analyse_tokens, backtick_curb, format_mantra,
-    is_source, modern, parse_answer, prompt_for, terms_of, token_terms, reconcile_case, system_prompt, units_pieces, vocative_rule,
+    is_source, modern, parse_answer, prompt_for, token_terms, reconcile_case, system_prompt, units_pieces, vocative_rule,
     _clean_quotes, _conventional,
 )
-from .language import LANGUAGE, set_language
+from .language import ENCLITICS, LANGUAGE, PRONOUNS, particles, pronoun_english, set_language
 from .lint import Finding, lint, HONORIFICS, HONORIFIC_MEANINGS, _clean_dict_gloss, _inside, _protected, gloss_once, term_key
 from .models import (
     ModelPool, clear_metal_cache, is_mitra_translate,
@@ -201,6 +203,100 @@ class Result:
 
 
 LAYOUT_MARKS_RE = re.compile(r"\s*(?:/{1,2}|\|{1,2}|‖|।{1,2}|॥)\s*$")     # the daṇḍa that closes a line or a verse
+THINKING_HEADROOM = 12288                         # tokens a thinking model may spend on its reasoning before the answer
+EPITHET_RE = re.compile(r"`([^`\n]+)`\s*\(([^()\n]*)\)")
+
+
+def address_keys(word: str) -> set[str]:
+    """A word of address as the draft may write it: the avagraha of 'mite is often written out (amite)."""
+    key = unicodedata.normalize("NFC", word).lower().lstrip("'’‘ʼ")
+    return {key, "a" + key} if word[:1] in "'’‘ʼ" else {key}
+
+
+def unwrap_unlisted(text: str, addressable: set[str]) -> str:
+    """The Stage 1 draft writes `word` (English) for a describing word of address and for nothing else: where the word
+    has no reading as a vocative in the chunk (a nominative predicate), the English stands alone."""
+    return EPITHET_RE.sub(lambda m: m.group(0) if address_keys(m.group(1)) & addressable else m.group(2).strip(), text)
+
+
+def clean_reply(text: str) -> str:
+    """What the text's own marks left in a reply: the marks, the dots and the braces."""
+    text = text.replace("‹", "").replace("›", "").replace("«", "").replace("»", "").replace("·", " ")
+    return re.sub(r"\s*\{[^{}]*\}", "", text)
+
+
+def settle_braces(text: str, glosses: list[tuple[str, str]]) -> str:
+    """What a reply made of its segment's braces: two English words offered and both written ("by that therefore",
+    "who/which") become the first, and the note of an accusative brace copied with its word ("you, object") is dropped.
+    Only what this segment's braces offered: "the agent, object and instrument" elsewhere is text."""
+    for _, english in glosses:
+        english, _, note = english.partition(", ")
+        options = english.split(" / ")
+        if note:
+            text = re.sub(r"(?<!\w)(" + "|".join(map(re.escape, options)) + rf"),\s*{re.escape(note)}\b", r"\1", text, flags=re.I)
+        if len(options) > 1:
+            text = re.sub(r"(?<!\w)" + r"(?:\s*/\s*|\s+)".join(map(re.escape, options)) + r"(?!\w)", options[0], text, flags=re.I)
+    return text
+
+
+def _whole(form: str, before: str = "", after: str = "") -> str:
+    """The pattern of a form as a whole word of a source line: not inside a longer word, not after an apostrophe (an elided
+    a- belongs to its word), and not where one of the line's own marks (``before``, ``after``) already stands."""
+    return rf"(?<![\w'’‘{before}]){re.escape(form)}(?![\w{after}])"
+
+
+def mark_words(line: str, describing: set[str], bare: set[str] = frozenset()) -> str:
+    """Each describing word of address between ‹ and ›, and each name, title or kinship word between « and », where it stands
+    as a whole word of the line: marks that show a draft which words are written `word` (English) and which are copied bare
+    (a single kind of mark left both unsure). The marks are not copied. A word written with the avagraha is shown with its
+    elided a- restored (amite for 'mite): a far sentence about it did nothing, the restored word in place is complete."""
+    for words, (left, right) in ((bare, "«»"), (describing, "‹›")):
+        for w in sorted(words, key=len, reverse=True):
+            for form in {w} | ({"'" + w[1:]} if w.startswith("a") else set()):
+                line = re.sub(_whole(form, "‹«", "›»"), lambda m, w=w: f"{left}{w}{right}", line)
+    return line
+
+
+def split_fused(line: str, fused: list[tuple[str, list[str]]]) -> str:
+    """The words that sandhi fused with a small word, shown in the line as their parts joined by · (nāgacchasi as
+    na·āgacchasi): a model reads a fused word whole and loses the small word, but obeys what stands in its place."""
+    for src, parts in fused:
+        line = re.sub(_whole(src, "‹·", "›·"), lambda m: "·".join(parts), line)
+    return line
+
+
+def gloss_particles(line: str, pairs: list[tuple[str, str]]) -> str:
+    """Each particle or pronoun of the line followed by its English in braces (api{too / even}): a draft drops a small word
+    unless the English stands beside it."""
+    for word, english in pairs:
+        line = re.sub(_whole(word, "‹", "›{"), lambda m: f"{m.group(0)}{{{english}}}", line)
+    return line
+
+
+SENTENCE_END_RE = re.compile(r"[.!?…][\"'”’)\]*_`]*$")
+
+
+def close_sentence(text: str) -> str:
+    """A paragraph or verse ends with a full stop: put one where the model left a comma, a semicolon or nothing."""
+    text = text.rstrip()
+    if not text or SENTENCE_END_RE.search(text):
+        return text
+    return re.sub(r"[,;:\s]+$", "", text) + "."
+
+
+def echo_of(text: str, src: str) -> bool:
+    """The model copied the source line instead of translating it: most of the words of its line are words of the source
+    (a line of one or two words is a name or a title, which stays as it is)."""
+    words = [w for w in re.findall(r"\w+", text.lower()) if len(w) >= 3]
+    have = set(re.findall(r"\w+", src.lower()))
+    return len(words) >= 3 and sum(w in have for w in words) >= 0.6 * len(words)
+
+
+def echoed_lines(parsed: dict[int, str], sources: list[str]) -> list[int]:
+    """The numbers (from 1) of the lines of a numbered reply that copy their source line."""
+    return [i for i, text in parsed.items() if 0 < i <= len(sources) and echo_of(text, sources[i - 1])]
+
+
 GRAMMAR_TAG_RE = re.compile(
     r"\[(?:neuter|masculine|feminine|nominative|accusative|instrumental|dative|ablative|genitive|locative|vocative|"
     r"singular|plural|dual|past|present|future|optative|imperative)[^\]]*\]|\(\s*past\s*\)", re.I)
@@ -693,26 +789,102 @@ class Translator:
     def _term_rules(self, chunk: list[Unit]) -> str:
         """The glossary's rulings for the terms of this chunk: "stem -> gloss (never 'alternative')"."""
         glossary, alternatives = self.s.glossary_map, self.s.glossary_alternatives
-        present = terms_of(t for u in chunk for t in u.tokens)
+        uses: dict[str, list[Token]] = {}                # each stem the chunk's words stand for, with those words
+        for u in chunk:
+            for t in u.tokens:
+                if not t.punct:
+                    for stem in token_terms(t):
+                        uses.setdefault(stem, []).append(t)
         out = []
         for stem, gloss in glossary.items():
-            if gloss and stem in present:
+            if gloss and stem in uses and not self._adverb_only(stem, uses[stem]):
                 never = ", ".join(f"'{x}'" for x in alternatives.get(stem, [])[:3])
                 out.append(f"{modern(stem)} -> {gloss}" + (f" (never {never})" if never else ""))
         return "; ".join(out)
 
     @staticmethod
+    def _adverb_only(stem: str, tokens: list[Token]) -> bool:
+        """Every occurrence of the term in the chunk is the instrumental singular of an a-stem (sukhena, bhāvena): an adverb
+        of manner as often as a noun, and the glossary's noun would be forced on it."""
+        uses = [t for t in tokens if stem in token_terms(t)]
+        return bool(uses) and all(
+            t.first is not None and t.first.kind == "noun" and t.first.case == "instr"
+            and t.first.number == "sg" and t.surface.endswith(("ena", "eṇa")) for t in uses)
+
+    @staticmethod
+    def _glosses(u: Unit) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+        """A segment's particles, and its oblique pronouns, each as it stands in the line with its English: words a draft
+        drops unless the English stands beside them (api, iva, eva; tasya, tvayi), or takes for the subject (an accusative).
+        Only a word that is one of these itself, not a member of a fused word whose reading may be wrong (māyeva); and a
+        particle only where the form has an indeclinable reading (nāma "by name", not the noun nāmaṃ)."""
+        table = particles()
+        small: dict[str, str] = {}
+        pronouns: dict[str, str] = {}
+        for t in ([] if u.block.kind == "heading" else u.tokens):
+            first = t.first
+            if first is None or first.headword is None:
+                continue
+            stem, word = first.headword.stem.replace("ṁ", "ṃ"), modern(t.surface)
+            if stem in table:
+                if any(p.kind == "ind" for p in t.candidates):
+                    small.setdefault(word, table[stem])
+            elif first.kind == "pron" and word not in ENCLITICS and (english := pronoun_english(stem, first.case, first.number, first.gender)):
+                pronouns.setdefault(word, english)
+        return list(small.items()), list(pronouns.items())
+
+    @staticmethod
+    def _marked_words(u: Unit, kept: dict[str, str], listed: set[str]) -> tuple[set[str], set[str]]:
+        """The words of a segment to mark in the text: the possible describing words of address, and apart from them every
+        name, title or kinship word of the kept list in whatever case (copied bare). A model finds a word of address inside
+        its clause seldom, and the inflected form of a name beside a list far away not at all (a name translated, a bare
+        word given English). A word is marked by its own stem, not as a member of a compound."""
+        describing: set[str] = set()
+        bare: set[str] = set()
+        for t in ([] if u.block.kind == "heading" else u.tokens):
+            first = t.first
+            if first is None:
+                continue
+            word = modern(t.surface)
+            stem = first.headword.stem if first.headword is not None else ""
+            if stem in kept and (stem in HONORIFICS or t.only_names or first.case == "voc"):
+                bare.add(word)                           # a name that is also a common word (citta) only where it addresses
+            elif word in listed:
+                describing.add(word)
+        return describing, bare
+
+    @staticmethod
+    def _fusions(u: Unit) -> list[tuple[str, list[str]]]:
+        """The words of a segment that sandhi fuses with a function word (a particle, na, a pronoun), with their parts, for
+        split_fused: a model reading the fused form loses the small word (nāgacchasi, prāpyeva). Only a split of two or three
+        known words at a vowel sandhi is given, and not a reading the lexicon only generates (kvip), because a wrong split
+        shown in the text would be obeyed (tvat + nātha is a compound; sukhena + ayānti, mai + eva are wrong)."""
+        functions = {"na"} | set(particles()) | PRONOUNS
+        shown: list[tuple[str, list[str]]] = []
+        for src, parts in itertools.groupby([] if u.block.kind == "heading" else u.tokens, key=lambda t: t.src):
+            g = list(parts)
+            heads = [t.first.headword if t.first is not None else None for t in g]
+            if not src or not 2 <= len(g) <= 3 or any(h is None or "(kvip)" in (h.grammar or "") for h in heads):
+                continue
+            if not all(re.search(r"[aāiīuūṛeo]$", modern(t.surface)) for t in g[:-1]):
+                continue
+            pair = (modern(src), [modern(t.surface) for t in g])
+            if any(h.stem in functions for h in heads) and pair not in shown:
+                shown.append(pair)
+        return shown
+
+    @staticmethod
     def _kept_words(chunk: list[Unit]) -> dict[str, str]:
         """The names, titles and honorifics of this chunk, stem -> as it is to be written: what the draft must leave
         as it is. A word the dictionary knows as a name but also reads as an ordinary word is left out (it may be a
-        description here), and so is a stem that is only a homonym behind the first reading. A heading names the
-        text and takes its English in parentheses, so it contributes nothing."""
+        description here) unless it stands in the vocative (`_name_in_address`: ānanda is "joy" and Ānanda, and one
+        addressed so is addressed by name), and so is a stem that is only a homonym behind the first reading. A heading
+        names the text and takes its English in parentheses, so it contributes nothing."""
         out: dict[str, str] = {}
         for u in chunk:
             if u.block.kind == "heading":
                 continue
             for t in u.tokens:
-                first = t.candidates[0] if t.candidates else None
+                first = t.first
                 h = first.headword if first else None
                 if h is None:
                     continue
@@ -720,17 +892,30 @@ class Translator:
                 stems = {h.stem} if proper else {h.stem} | {m.replace("ṁ", "ṃ") for m in first.members}
                 for stem in sorted(stems):
                     if stem in HONORIFICS:
-                        out.setdefault(stem, modern(honorific_form(stem, stem, [], h.family_set)))
-                    elif t.only_names:
+                        voc = [f"{first.case} {first.number}"] if first.case == "voc" else []      # a vocative stays as it stands (amba)
+                        out.setdefault(stem, modern(honorific_form(stem, modern(t.surface) if voc else stem, voc, h.family_set)))
+                    elif t.only_names or (stem == h.stem and Translator._name_in_address(t)):
                         out.setdefault(stem, modern(stem.capitalize()))
         return out
 
     @staticmethod
+    def _name_in_address(t: Token) -> bool:
+        """A word of the text whose first reading is a vocative singular and whose stem the dictionary also knows as a
+        name (ānanda: "joy", and Ānanda; subhūte: subhūta, and Subhūti). Not a part cut from a compound or a junction,
+        whose stem form only looks like a vocative; and not a form whose first reading is another case (the hymn's
+        'moghadarśane, a locative by its first reading and a nāga's name in the dictionary, stays a describing word)."""
+        first = t.first
+        if first is None or first.headword is None or t.src or t.analysis is None:
+            return False
+        return (first.case == "voc" and first.number == "sg"
+                and any(h.kind == "name" and h.stem == first.headword.stem for h in t.analysis.headwords))
+
+    @staticmethod
     def _address_words(chunk: list[Unit], kept: dict[str, str]) -> list[str]:
-        """The words that can be words of address, which a model seldom finds for itself: the lexicon's own first
-        reading is a vocative singular, or the form allows a vocative singular and no nominative and no reading as a
-        verb, a pronoun or an indeclinable. Left out: names and titles (they stay bare), headings, and a locative that
-        agrees with the noun beside it."""
+        """The words that can be describing words of address, which a model seldom finds for itself: the lexicon's own
+        first reading is a vocative singular, or the form allows a vocative singular and no nominative and no reading as a
+        verb, a pronoun or an indeclinable. Left out: names and titles (they stay bare), a word the dictionary also knows
+        as a particle or an absolutive, headings, and a locative that agrees with the noun beside it."""
         def locative(t: Token, first: bool = False) -> bool:
             return any(p.case == "loc" and p.number == "sg" for p in (t.candidates[:1] if first else t.candidates))
 
@@ -747,6 +932,8 @@ class Translator:
                     continue
                 if locative(t) and any(locative(x, first=True) for x in words[max(0, n - 1):n] + words[n + 1:n + 2]):
                     continue                             # āśaye śuddhe: a locative with the noun it agrees with
+                if t.analysis is not None and any(h.pos in ("ind", "ger", "abs", "inf") for h in t.analysis.headwords):
+                    continue                             # also a particle or an absolutive (Pāli nāma, vata, paṭicca): no address
                 first = c[0].case == "voc" and c[0].number == "sg"          # the lexicon's own first reading (kalyāṇi)
                 by_form = (not any(p.kind in ("verb", "ind", "affix", "pron") for p in c)
                            and any(p.case == "voc" and p.number == "sg" for p in c)
@@ -780,32 +967,67 @@ class Translator:
         name_examples = "Bhagavān, Śāriputra, Śrāvastī" if is_sa else "Bhagavā, Ānanda, Sāvatthī, Jetavana"
         voc_examples = "Śāriputra, bhagavan, bhikṣavaḥ" if is_sa else "bhikkhave, bhante, Ānanda"
         idioms = ("   - 'yāvat' closing an abbreviated list means 'and so forth up to'.\n"
-                  "   - Correlatives 'yad ... tad' mean 'whatever ... that'.\n" if is_sa else "")
+                  "   - A relative word with its answering demonstrative ('yad ... tad') is 'whatever ... that' only where the relative stands for a thing; "
+                  "for a person it is 'who ... he', and where it opens a clause of reason it is 'since ... therefore'.\n" if is_sa else "")
         avagraha = (" An apostrophe at the start of a word stands for an elided a-: read 'x as ax, which often makes the word "
                     "a negative.") if is_sa else ""
 
         for chunk in chunks:
-            opens = [True] + [a.block is not b.block for a, b in zip(chunk, chunk[1:])]   # a paragraph or a verse begins
-            source_lines = []
-            for i, (u, new) in enumerate(zip(chunk, opens), 1):    # a blank line between paragraphs and between verses
-                if new and i > 1:
-                    source_lines.append("")
-                source_lines.append(f"[{i}] {LAYOUT_MARKS_RE.sub('', modern(u.masked or u.source).strip())}")
+            breaks = [a.block is not b.block for a, b in zip(chunk, chunk[1:])]
+            opens, closes = [True] + breaks, breaks + [True]       # a paragraph or a verse begins, and ends
             term_rules = self._term_rules(chunk)
             kept = self._kept_words(chunk)
             bare = list(dict.fromkeys(kept.values()))
+            bare_forms = list(dict.fromkeys([*bare, *kept]))       # the forms shown and the stems: a draft may write either
             address = self._address_words(chunk, kept)
-            kept_rule = (" These words of this text are names and titles: write each bare, exactly as shown (the plural with an "
+            addressable = set().union(*(address_keys(w) for w in address))     # the prompt says no other word is backticked
+            listed = set(address)
+            marks = [self._marked_words(u, kept, listed) for u in chunk]
+            glosses = [self._glosses(u) for u in chunk]            # each segment's particles, and its oblique pronouns
+            glossed = [small + pronouns for small, pronouns in glosses]
+            source_lines, bases = [], []
+            any_fused = any_glossed = False
+            for i, (u, new, pairs, mark) in enumerate(zip(chunk, opens, glossed, marks), 1):
+                if new and i > 1:
+                    source_lines.append("")              # a blank line between paragraphs and between verses
+                base = LAYOUT_MARKS_RE.sub('', modern(u.masked or u.source).strip())
+                split = split_fused(base, self._fusions(u))
+                line = gloss_particles(split, pairs)
+                any_fused, any_glossed = any_fused or split != base, any_glossed or line != split
+                source_lines.append(f"[{i}] {mark_words(line, *mark)}")
+                bases.append(base)
+            pronouns_glossed = any_glossed and any(pronouns for _, pronouns in glosses)
+            kept_rule = (" These words of this text are names, titles and kinship words: write each bare, exactly as shown (the plural with an "
                          "English -s), wherever it occurs and in whatever case form, never in backticks and never followed by "
                          f"English in parentheses: {', '.join(bare)}.") if bare else ""
-            address_rule = (" By their form these words of this text can be words of address (the same form may be another case: "
-                            "the sentence decides); where one addresses someone and is not a name or title, it is written "
-                            f"`word` (English) with the word exactly as shown here: {', '.join(address)}."
-                            " Only a word of this list may be written in backticks, and only where it addresses someone; a word "
-                            "that is not on the list is never in backticks, even when it describes the one addressed.") if address else ""
+            address_rule = (f" By their form these words of this text can be words of address: {', '.join(address)}. Where one of "
+                            "them addresses someone (the sentence decides) and is not a name, a title, a kinship word or a customary form of address, "
+                            "it is set off by commas, stands outside its clause (it is never the predicate and never governed by "
+                            "'in', 'to' or 'by') and is written `word` (English), with the word exactly as shown here. Where it "
+                            f"addresses no one it is plain English with no {lang_name} beside it, as is every word that is not on "
+                            "this list: only a word of this list is ever written in backticks.") if address else ""
+            marked = []
+            if any(bare_words for _, bare_words in marks):
+                marked.append("each name, title or kinship word of rule 2 is marked «like this»: the word itself is copied bare and not translated "
+                              "(the plural with an English -s), but the English word that carries its case (by, of, to, from, in) is still written")
+            if any(describing for describing, _ in marks):
+                marked.append("each possible describing word of address is marked ‹like this›: where it addresses someone it is set off by commas "
+                              "and written `word` (English)")
+            if marked:
+                address_rule += " In the text below, " + "; ".join(marked) + ". The marks are not copied."
+            braced = ""                                  # the sentence says only what this chunk's text shows
+            if pronouns_glossed:
+                braced = (" In the text below, each particle, each relative pronoun, and each personal pronoun or tad in a case other than the nominative is followed by its English in braces: "
+                          "it is rendered once, in the English of its own segment, and the braces are not copied. A brace holds only the English to write: where it shows two words "
+                          "(who / which) write the one that fits, never both, and where it ends in a note after a comma (you, object) write only the English before the comma.")
+            elif any_glossed:
+                braced = (" In the text below, each particle is followed by its English in braces: it is rendered once, in the English of its own segment, and the braces are not copied. "
+                          "A brace holds only the English to write: where it shows two words (too / even) write the one that fits, never both.")
             terms_clause = f": {term_rules}." if term_rules else "."
             rules = [
-                "Strictly literal and rationalist: Render every word faithfully and drop no particle; maintain fluent English syntax without theological, devotional, or supernatural idioms.",
+                "Strictly literal and rationalist: Render every word faithfully and drop no particle; maintain fluent English syntax without theological, devotional, or supernatural idioms."
+                + braced
+                + (" In the text below, a word that sandhi has fused with a small word is shown as its parts joined by ·; every part is translated, and the dots are not copied." if any_fused else ""),
                 f"Names and Text Titles: Leave personal names, place names, and honorific stems untranslated (e.g. {name_examples}).{kept_rule}"
                 " The title of the text remains untranslated, with its English translation in parentheses on its first occurrence only; later occurrences are the title alone.",
                 f"Vocatives: Leave names, titles and customary forms of address in the vocative untranslated, without Victorian titles or parentheticals (e.g. {voc_examples}). "
@@ -821,8 +1043,9 @@ class Translator:
                 "Punctuation: Use standard English punctuation (periods, commas, semicolons); a paragraph or verse begins with a capital and ends with a full stop. The marks /, //, | and || are layout, not text: never write them.",
                 "Format: Output one translated line per numbered segment in the form '[n] Translation text'. Each number appears exactly once, and its line is English only, never the source words copied.",
                 "Construing: Numbered segments with no blank line between them are one paragraph or one verse, and their words construe together."
-                " Before writing it, find its finite verb and its subject: a word in the accusative is never the subject, an adjective takes the case of the noun it agrees with (not of the nearest noun), and a negation negates the verb of its own clause."
+                " Before writing it, find its finite verb and its subject: a word in the accusative is never the subject (a passive verb with no nominative of its own has an unstated subject, 'one'; an accusative pronoun beside a participle is that participle's object), an adjective takes the case of the noun it agrees with (not of the nearest noun), and a negation negates the verb of its own clause."
                 " Then give each numbered segment the English of its own words: add no noun or clause that has no word in that segment, and leave out no word of it."
+                " An adjective or participle that agrees with a noun or pronoun in the next segment of the same verse is written with that word repeated ('you, ...'); a repeated word is not an added word."
                 + avagraha,
                 "Placeholders: reproduce every %%number%% marker of a segment exactly, once, in its translation.",
             ]
@@ -838,20 +1061,36 @@ class Translator:
             # English runs to about six tokens a source word (long compounds, diacritics), plus the numbering
             need = 6 * sum(u.words for u in chunk) + 32 * len(chunk) + 128
             max_tokens = max(512, min(need, max(self.s.max_tokens, 4096)))
-            self.calls += 1
-            reply = model.chat(messages, max_tokens=max_tokens, temperature=self.s.temperature, thinking=self.s.thinking)
-            parsed = self._parse_numbered_translations(reply.text)
+            if self.s.thinking:
+                max_tokens += THINKING_HEADROOM          # the model's reasoning is generated within the same cap
+            def ask():
+                self.calls += 1
+                reply = model.chat(messages, max_tokens=max_tokens, temperature=self.s.temperature, thinking=self.s.thinking)
+                parsed = self._parse_numbered_translations(reply.text)
+                return reply, parsed, echoed_lines(parsed, bases)
+
+            reply, parsed, echoed = ask()
+            if len(echoed) * 2 > len(parsed):            # a model that copies the text is told so, once
+                messages += [{"role": "assistant", "content": reply.text},
+                             {"role": "user", "content": f"That copies the {lang_name} text instead of translating it. Write the English "
+                                                         "translation of every numbered segment, one line per segment, in the form '[n] English'."}]
+                reply, parsed, echoed = ask()
+            for i in echoed:
+                parsed.pop(i)                            # a copy of the source is no draft: Stage 2 translates the sentence alone
             if reply.finish_reason == "length" and parsed:
                 parsed.pop(max(parsed))                  # the last line was cut off: no draft is better than half of one
-            gloss_after_name = re.compile(r"`?\b(" + "|".join(map(re.escape, bare)) + r")(s?)`?\s*\([^()]*\)", re.I) if bare else None
-            for i, (u, new) in enumerate(zip(chunk, opens), 1):
+            gloss_after_name = re.compile(r"`?\b(" + "|".join(map(re.escape, bare_forms)) + r")(s?)`?\s*\([^()]*\)", re.I) if bare_forms else None
+            for i, (u, new, end, pairs) in enumerate(zip(chunk, opens, closes, glossed), 1):
                 if not parsed.get(i):
                     continue
-                text = parsed[i]
+                text = settle_braces(clean_reply(parsed[i]), pairs)      # the marks, dots and braces of the text are not part of the draft
                 if gloss_after_name:                     # a name or title takes no explanation in parentheses
                     text = gloss_after_name.sub(r"\1\2", text)
+                text = unwrap_unlisted(text, addressable)
                 if new:
                     text = text[:1].upper() + text[1:]   # a paragraph or verse begins with a capital
+                if end and u.block.kind == "para":
+                    text = close_sentence(text)          # and ends with a full stop
                 u.initial_draft = self._fit_placeholders(u, text)
 
     # -- document rendering ------------------------------------------------------------

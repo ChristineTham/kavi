@@ -46,8 +46,9 @@ HONORIFICS = {
     "śrāvaka", "mahāśrāvaka", "pratyekabuddha", "deva", "mahārāja", "ācārya", "upādhyāya", "sthavira", "mahāsthavira", "ārya",
     "lokanāyaka", "lokanātha", "nāyaka", "nātha", "mahānubhāva", "kulaputra",
     "lokavid", "puruṣadamyasārathi", "vidyācaraṇasampanna",
+    "amba", "ambā", "tāta",                                      # kinship words of address stay bare like the titles
     # Pāli
-    "bhagavā", "āyasmā", "bhante", "āvuso", "bhikkhu", "satthā", "satthar", "kulaputta"
+    "bhagavā", "āyasmā", "bhante", "āvuso", "bhikkhu", "satthā", "satthar", "kulaputta", "amma"
 }
 
 HONORIFIC_MEANINGS: dict[str, str] = {
