@@ -1,7 +1,7 @@
 """The models and the prompts they are given.
 
 A model is either loaded here with MLX (``MLXModel``: a local folder or a Hugging Face ``org/repo``) or served by a
-local Ollama (``OllamaModel``: a name with a tag, ``gemma4:26b-mlx``; see ``ollama.py``); both answer ``chat()`` with
+local Ollama (``OllamaModel``: a name with a tag, ``qwen3.8:27b-mlx``; see ``ollama.py``); both answer ``chat()`` with
 a ``Reply``. ``ModelPool`` hands out one per role, sharing it when the two roles name the same model. The legacy
 MITRA pair (``mitra-qwen35-translate`` with its own instruction, ``mitra-qwen35-it`` as reviewer) still runs through
 the same pool. Thinking is off unless asked; decoding is greedy with a small repetition penalty.

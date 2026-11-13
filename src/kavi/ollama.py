@@ -1,6 +1,6 @@
 """Models served by a local Ollama (https://ollama.com) instead of loaded with MLX in this process.
 
-A model is named as Ollama names it, ``gemma4:26b-mlx``; ``ollama:NAME`` says so explicitly for a name without a
+A model is named as Ollama names it, ``qwen3.8:27b-mlx``; ``ollama:NAME`` says so explicitly for a name without a
 tag. The server is ``$OLLAMA_HOST`` (default ``127.0.0.1:11434``). Ollama's default context window is far smaller
 than a model's, and a prompt longer than it is cut without a word, so every request asks for
 ``$KAVI_OLLAMA_NUM_CTX`` tokens (default 32768: a review batch with its analysis table fits).
@@ -31,7 +31,7 @@ def model_name(model: str) -> str:
 
 
 def canonical(model: str) -> str:
-    """One spelling for one model: ``ollama:gemma4:26b-mlx`` is ``gemma4:26b-mlx`` (the prefix is kept only where
+    """One spelling for one model: ``ollama:qwen3.8:27b-mlx`` is ``qwen3.8:27b-mlx`` (the prefix is kept only where
     the name has no tag to tell it by), so that two roles naming the same model share it."""
     name = model_name(model)
     return name if model.startswith(PREFIX) and ":" in name else model

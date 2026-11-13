@@ -12,7 +12,9 @@ HOME = Path.home()
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODELS_DIR = Path(os.environ.get("KAVI_MODELS_DIR", HOME / ".cache" / "mlx-models"))
 
-DEFAULT_MODEL = "gemma4:26b-mlx"                  # served by a local Ollama (ollama.py); the author's choice
+DEFAULT_MODEL = "qwen3.8:27b-mlx"                 # served by a local Ollama (ollama.py); the author's choice of 2026-11-14 for its
+                                                  # speed (docs/eval/Prajñāpāramitāstotra-comparison.md: gemma4:31b-mlx is the
+                                                  # most accurate there at twice the time, gemma4:26b-mlx the fastest)
 MLX_MODEL_BASE = "mlx-community/Qwen3.8-27B"      # the MLX checkpoints `kavi setup --bits` still fetches
 TRANSLATE_HF = "buddhist-nlp/mitra-qwen35-translate"
 IT_HF = "buddhist-nlp/mitra-qwen35-it"

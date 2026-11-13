@@ -60,7 +60,7 @@ flowchart TD
      fed the exact candidate table produced by the symbolic engines. Its neural role is to resolve contextual homonym
      ambiguities, select the most coherent morphological parse, assign word-by-word glosses, and arrange the components
      into a literal, faithful English sentence.
-   - **Agentic Self-Improving Loop**: A unified model (`gemma4:26b-mlx` by default) operates inside an iterative review harness.
+   - **Agentic Self-Improving Loop**: A unified model (`qwen3.8:27b-mlx` by default) operates inside an iterative review harness.
      When the symbolic checker or reviewer detects an open issue, the model is prompted with the reviewer's structured
      critique and its own prior draft to systematically revise the sentence until all constraints are met.
 
@@ -124,16 +124,22 @@ unviable and was abandoned for the following reasons:
 
 We empirically benchmarked candidate architectures on Apple Silicon unified memory:
 
-* **Qwen 3.8 27B** *(the default until 2026-11-13; `--model qwen3.8:27b-mlx` or an MLX checkpoint)*: Exceptional instruction adherence (100% compliance on tested glossary rulings),
+* **Qwen 3.8 27B** *(the default: as an MLX checkpoint until 2026-11-13, and as `qwen3.8:27b-mlx` on Ollama since 2026-11-14)*: Exceptional instruction adherence (100% compliance on tested glossary rulings),
   emits clean JSON without markdown wrappers, and sustains a steady 15–20 tokens/sec.
+  In the comparison of five models on the Stage 1 draft of a Sanskrit hymn (`docs/eval/Prajñāpāramitāstotra-comparison.md`) it
+  took half the time of the most accurate model for nearly as many lines right (22 of 42 against 23), with more lines that
+  mislead (14 against 6): the author's choice of speed.
 * **Gemma 3 27B** (*bf16*): In unquantised bf16 (~54 GB), memory bus bandwidth limits generation to **3–5 tokens/sec**
   (4x slower than Qwen). Furthermore, it suffers from conversational verbosity, appending unsolicited breakdown
   commentary that disrupts automated parsers.
-* **Gemma 4 26B-A4B** (*MoE*; as `gemma4:26b-mlx` on Ollama the default since 2026-11-13, the findings below are from the earlier MLX bake-off): Extremely fast (50–80 tokens/sec), but its 4B active parameter budget lacks the capacity
+* **Gemma 4 26B-A4B** (*MoE*; as `gemma4:26b-mlx` on Ollama the default on 2026-11-13 and still the fastest choice, `--model gemma4:26b-mlx`; the findings below are from the earlier MLX bake-off): Extremely fast (50–80 tokens/sec), but its 4B active parameter budget lacks the capacity
   for classical languages. It suffers from severe undertranslation (leaving strings of raw Pāḷi words untranslated),
   stem truncation (dropping compound affixes), and markup leakage.
-* **Gemma 4 31B**: Capable instruction following (12–14 tokens/sec in 4-bit), but defaults to internal reasoning
+* **Gemma 4 31B** *(`--model gemma4:31b-mlx`, the most accurate and most consistent in the comparison of 2026-11-14)*: Capable instruction following (12–14 tokens/sec in 4-bit), but defaults to internal reasoning
   channels (`<|channel>thought`) that require aggressive regex stripping, and in bf16 is memory-bound (~3 tokens/sec).
+  Through Ollama with thinking off (kavi's setting) no reasoning channel appears. In that comparison it had the fewest lines
+  that mislead and gave the same draft twice running, at about ten tokens a second: twice the default's time and five times
+  that of `gemma4:26b-mlx`.
 
 ---
 
@@ -172,8 +178,8 @@ Codifies rules from the eight chapters of Kaccāyana (as published on [kaccayana
 
 ## Models
 
-The default model, for both the translating and the reviewing role, is **`gemma4:26b-mlx`** served by a local
-[Ollama](https://ollama.com): `kavi setup --models` runs `ollama pull gemma4:26b-mlx`, and `kavi doctor` says whether
+The default model, for both the translating and the reviewing role, is **`qwen3.8:27b-mlx`** served by a local
+[Ollama](https://ollama.com): `kavi setup --models` runs `ollama pull qwen3.8:27b-mlx`, and `kavi doctor` says whether
 the server answers and has the model. The server is `$OLLAMA_HOST` (default `127.0.0.1:11434`); every request asks
 for a context window of `$KAVI_OLLAMA_NUM_CTX` tokens (default 32768), because Ollama's own default is small and
 cuts a longer prompt without a word.
@@ -182,7 +188,7 @@ A model is named in one of two ways, in `--model`, `--translate-model`, `--revie
 
 | Name | Host | Example |
 | :--- | :--- | :--- |
-| an Ollama name with a tag (or `ollama:NAME`) | the Ollama server | `gemma4:26b-mlx`, `qwen3.8:27b-mlx` |
+| an Ollama name with a tag (or `ollama:NAME`) | the Ollama server | `qwen3.8:27b-mlx`, `gemma4:31b-mlx`, `gemma4:26b-mlx` |
 | a local folder or a Hugging Face `org/repo` | MLX, loaded in kavi's own process | `mlx-community/Qwen3.8-27B-bf16` |
 
 `kavi setup --bits 8` (or `4`) fetches the MLX Qwen 3.8 27B checkpoint at that quantisation instead. With two
@@ -214,7 +220,7 @@ uv run kavi app                                  # Streamlit interface
 
 ### Key CLI Flags
 * `--interlinear`: Produce 4-line interlinear output instead of standard prose.
-* `--model <name>`: An Ollama model name (default `gemma4:26b-mlx`), a local MLX model path or a Hugging Face MLX repo (e.g. `mlx-community/Qwen3.8-27B-bf16`).
+* `--model <name>`: An Ollama model name (default `qwen3.8:27b-mlx`; `gemma4:31b-mlx` is more accurate at twice the time, `gemma4:26b-mlx` is the fastest), a local MLX model path or a Hugging Face MLX repo (e.g. `mlx-community/Qwen3.8-27B-bf16`).
 * `--lang <pi|sa>`: Select language: `pi` Pāḷi (default) or `sa` Sanskrit.
 * `--rounds N`: Maximum review critique rounds per batch (default 5).
 * `--glossary FILE`: Technical terms glossary (default `src/kavi/glossaries/default.txt`).

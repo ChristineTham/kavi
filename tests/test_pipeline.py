@@ -116,7 +116,7 @@ def test_the_default_model_is_the_ollama_one(monkeypatch):
     from kavi.config import DEFAULT_MODEL, default_model
     from kavi.ollama import is_ollama
     monkeypatch.delenv("KAVI_MODEL", raising=False)
-    assert default_model() == DEFAULT_MODEL == "gemma4:26b-mlx" and is_ollama(default_model())
+    assert default_model() == DEFAULT_MODEL == "qwen3.8:27b-mlx" and is_ollama(default_model())
     monkeypatch.setenv("KAVI_MODEL", "mlx-community/Qwen3.8-27B-bf16")
     assert default_model() == "mlx-community/Qwen3.8-27B-bf16" and not is_ollama(default_model())
 
