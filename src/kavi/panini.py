@@ -38,6 +38,10 @@ _NATVA_TRIGGERS = set("rṣṛṝ")
 # Pāṇini 4.1.10 na ṣvasrādibhyaḥ: kinship ṛ-stems (not -tṛc/-tṛn agent nouns of 3.1.133)
 KINSHIP_R_STEMS = {"mātṛ", "svasṛ", "duhitṛ", "nanāndṛ", "yātṛ", "pitṛ", "bhrātṛ", "jāmātṛ", "devṛ", "naptṛ"}
 
+# 4.1.54 svāṅgāc copasarjanād asaṃyogopadhāt, 4.1.55 nāsikodarauṣṭhajaṅghādantakarṇaśṛṅgāc ca, and the vārttika
+# aṅgagātrakaṇṭhebhyaś ca: a body-part word ending a bahuvrīhi may make its feminine in -ī (candramukhī, tanvaṅgī, sukeśī)
+SVANGA_FEM_I = {"mukha", "keśa", "nakha", "nāsika", "udara", "oṣṭha", "jaṅgha", "danta", "karṇa", "śṛṅga", "aṅga", "gātra", "kaṇṭha"}
+
 # Pāṇini 5.4.68–154 samāsānta stem alternations at the end of a compound
 SAMASANTA_STEMS = {
     "rāja": "rājan",     # 5.4.91 rājāhaskhibhyaṣ ṭac
@@ -215,7 +219,7 @@ def compound_junction_variants(left: str, right: str) -> list[tuple[str, str]]:
     vowel = right[:1] in VOWELS
     # 6.1.101 akaḥ savarṇe dīrghaḥ & 6.3.137 anyeṣām api dṛśyate (lengthening of final vowel in prior compound member)
     if left.endswith("ā"):
-        out += [(left[:-1] + "a", "ā" + right), (left[:-1] + "a", "a" + right), (left, "a" + right)]
+        out += [(left[:-1] + "a", "ā" + right), (left[:-1] + "a", "a" + right), (left, "a" + right), (left, "ā" + right)]   # kṛpātmaka -> kṛpā + ātmaka
         if not vowel and len(left) >= 4 and right.startswith(("rāj", "mitr")):
             out += [(left[:-1] + "a", right)]                        # 6.3.137 viśvāmitra, rāṣṭrārājadhānī
     if left.endswith("ī"):

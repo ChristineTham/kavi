@@ -59,6 +59,7 @@ def test_bhs_readings():
 
 def test_panini_rules():
     from kavi.panini import (
+        SVANGA_FEM_I,
         compound_junction_variants,
         external_sandhi_cands,
         is_agent_tr,
@@ -81,6 +82,19 @@ def test_panini_rules():
     assert ("eka", "bhūta") in compound_junction_variants("ekī", "bhūta")
     assert ("punar", "ramate") in external_sandhi_cands("punāramate", 3)
     assert ("antaḥ", "śauṣiryam") in external_sandhi_cands("antaḥśauṣiryam", 4)
+    assert ("kṛpā", "ātmaka") in compound_junction_variants("kṛpā", "tmaka")   # 6.1.101: ā + ā as well as a + ā
+    assert {"aṅga", "mukha", "keśa"} <= SVANGA_FEM_I                          # 4.1.54–55 and the vārttika: tanvaṅgī, candramukhī
+
+
+def test_senseless_entries():
+    from kavi.cologne import Cologne
+    for body in ("[niravadya, nt., a high number: LV 〔148.7, 8〕 (prose) …]", "niṣprapañca, see prapañca.", "kṛpā (ā), f., see s.v. below.",
+                 "amba See ambā.", "buddha buddhi. See cols. 2 and 3.", "vi-śaya &c. See under vi-√ śī.", "manas [cf. Gk. μένος; Lat. Miner-va.]"):
+        assert Cologne.senseless(body), body                          # a rejected reading, a bare cross-reference, a line of cognates
+    for body in ("nir—avadya mf(ā)n. unblamable, unobjectionable, Up.; MBh. &c.", "kṛpā f. (g. bhidādi) pity, tenderness, compassion",
+                 "viṣaya (= Skt.), range, sphere; on two somewhat dubious uses of the word in Laṅk 〔2.7〕 and 13 see s.vv. pratyātma",
+                 "mogha m. a fence, hedge, L."):
+        assert not Cologne.senseless(body), body
 
 
 @pytest.mark.skipif(not HAVE_DATA, reason="Sanskrit data not installed (kavi setup --sanskrit)")
@@ -201,3 +215,44 @@ def test_lexicon_words():
     first = lx._resolve("tathāgatasya")                              # the memoised lookups hand out their own lists
     first[0].clear()
     assert lx._resolve("tathāgatasya")[0] and lx._by_model("tathāgatasya") == lx._by_model("tathāgatasya")
+
+
+@pytest.mark.skipif(not HAVE_DATA, reason="Sanskrit data not installed (kavi setup --sanskrit)")
+def test_stotra_lessons():
+    """Rāhulabhadra's Prajñāpāramitāstotra (2026-11-13): general rules, each checked over the Heart, the Diamond, the
+    Mūlamadhyamakakārikā and the stotra."""
+    from kavi.sanskrit import SanskritLexicon
+    lx = SanskritLexicon(DATA)
+    h = lx.analyse("'mite").headwords[0]                              # the participle's own stem (not ānta), the negation's own entry
+    assert h.lemma == "amita" and h.pos == "pp" and h.construction == "na + mita + ta" and "unmeasured" in h.meaning
+    assert h.grammar.startswith("pp of māti") and "want" not in lx.analyse("amanti").headwords[0].meaning   # amati the verb, not amati f. "want"
+    for form, parts in [("sudurbodhāsi", ["sudurbodhā", "asi"]), ("anuyātāsi", ["anuyātā", "asi"]), ("gambhīrāsi", ["gambhīrā", "asi"]),
+                        ("tasyāmba", ["tasya", "amba"]), ("ceha", ["ca", "iha"])]:
+        a = lx.analyse(form)                                         # a feminine in -ā + asi; a chance verb in the 2nd person is no reading
+        assert not a.headwords and a.splits[0].parts == parts, (form, [x.stem for x in a.headwords], [x.parts for x in a.splits[:2]])
+    assert lx.analyse("asi").headwords[0].lemma == "asti"
+    h = lx.analyse("amba").headwords[0]
+    assert h.lemma == "ambā" and h.parses == ["fem voc sg"] and "mother" in h.meaning
+    assert lx.analyse("avagamyatām").headwords[0].lemma == "avagamyate"   # a third person stays a verb
+    for form, construction, parse in [("buddhadharmapuraḥsarīm", "buddha + dharma + puraḥsara", "fem acc sg"),
+                                      ("sarvānavadyāṅgi", "sarva + na + avadya + aṅga", "fem voc sg"),
+                                      ("kṛpātmakāḥ", "kṛpā + ātmaka", "masc nom pl")]:
+        h = lx.analyse(form).headwords[0]                            # mf(ī)n. feminines, -aṅgī, ā + ā, a negation opened once
+        assert h.construction == construction and parse in h.parses, (form, h.construction, h.parses)
+    h = lx.analyse("śatatamīm").headwords[0]                         # an ordinal's feminine in -ī
+    assert h.lemma == "śatatama" and h.construction == "" and "fem acc sg" in h.parses
+    h = lx.analyse("sarvavāgviśayātītāṃ").headwords[0]               # vāg- is vāc; the participle atīta before a dual imperative of atyeti
+    assert h.construction == "sarva + vāc + viśaya + atīta + ta" and h.parses == ["fem acc sg"]
+    assert lx.analyse("anavadyaḥ").headwords[0].construction == "na + avadya"
+    assert lx.analyse("arhatāṃ").headwords[0].lemma == "arhat" and lx.analyse("vyākhyāto").headwords[0].pos == "pp"
+    for form, verb in [("kṛtam", "karoti"), ("jātasya", "jāyate"), ("vidyamānaṃ", "vidyate"), ("siddhaḥ", "sidhyati"), ("smṛtam", "smarati")]:
+        assert lx.analyse(form).headwords[0].grammar.startswith(f"p{'rp' if form.startswith('vidya') else 'p'} of {verb}"), (form, lx.analyse(form).headwords[0].grammar)
+    assert lx.analyse("parinirvāpito").headwords[0].lemma == "parinirvāpita"
+    assert lx.analyse("tenocyata").splits[0].analyses[1].headwords[0].lemma == "ucyate"   # e written a before a vowel: the common verb
+    assert lx.analyse("sarvopalambhopaśamaḥ").headwords[0].construction == "sarva + upalambha + upaśama"
+    assert lx.analyse("jarāmaraṇaduḥkhādi").splits[0].parts == ["jarāmaraṇaduḥkha", "ādi"]   # a stem before ādi stays
+    for stem, sense in [("niravadya", "unblamable"), ("niṣprapañca", "expansion"), ("kṛpā", "pity"), ("sattva", "being"), ("loka", "connected with roka"),
+                        ("manas", "mind"), ("ātman", "breath"), ("anya", "other"), ("buddha", "awakened"), ("agni", "fire"),
+                        ("dharma", "normally m. as in Skt."), ("prapañca", "hard to define"), ("saṃskāra", "Pali saṃkhāra")]:   # the last three: Edgerton's own entries are still the first
+        assert sense in lx._meaning(stem)[0], (stem, lx._meaning(stem)[0][:80])
+    assert lx.analyse("sarpo").headwords[0].pos == "masc"            # a line of cognates is no sense under a gender

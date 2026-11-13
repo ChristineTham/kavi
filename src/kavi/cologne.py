@@ -174,6 +174,18 @@ def resolve_references(con: sqlite3.Connection) -> int:
     return n
 
 
+def _line_number(L) -> float:
+    """An entry's place in its dictionary: Monier-Williams' supplementary lines are numbered ``14451.1`` and follow 14451."""
+    try:
+        return float(L)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+# "amba See ambā.", "kṛpā (ā), f., see s.v. below.", "buddha buddhi. See cols. 2 and 3.", "vi-śaya &c. See under vi-√ śī."
+_SEE_ONLY = re.compile(r"^(?:\d\. )?\S+?,?(?: (?:\([^)]*\),?|(?:m|f|n|nt|mfn|adj|ind|indecl)\.,?|&c\.,?|-\S+|[^\s.,;]+\.))*,? [Ss]ee .{0,60}$")
+_ETYMOLOGY = re.compile(r"^\S+ \[(?:cf\. )?(?:Zend|Zd|Gk|Lat|Goth|Germ|Old|Lith|Angl|Mod|Slav|Eng|Hib|Armen|Russ|Cambro)\b")   # "manas [cf. Gk. μένος; Lat. Miner-va.]"
+_HOMONYM = re.compile(r"^\d\. \S")
 _GENDER_MW = re.compile(r"^(?:\d\. )?\S+ (?:\([^)]*\),? )?(?:\d\. )?(mfn|mf\([^)]{1,12}\)n|m\. n|m\. f|f\. n|m|f|n|ind\.p|ind)\.(?= |$)")
 
 
@@ -199,6 +211,8 @@ class Cologne:
         self.con = sqlite3.connect(f"file:{path}?immutable=1", uri=True, check_same_thread=False)
         self.con.row_factory = sqlite3.Row
         self._cache: dict[str, list[sqlite3.Row]] = {}
+        self._genders_cache: dict[str, frozenset[str]] = {}
+        self._meaning_cache: dict[tuple[str, int], str] = {}
 
     def lookup(self, iast: str) -> list[sqlite3.Row]:
         """Every entry whose headword is ``iast`` (a stem or a root): the common word before the proper name (``2 dharma``
@@ -212,7 +226,7 @@ class Cologne:
                     if rows:
                         break
             rows.sort(key=lambda r: (2 if r["body"].startswith("?") else (1 if self.is_name_body(r["body"]) else 0),
-                                     self.ORDER.get(r["source"], 9), int(r["L"]) if str(r["L"]).isdigit() else 0))
+                                     self.ORDER.get(r["source"], 9), _line_number(r["L"])))
             self._cache[iast] = rows
         return self._cache[iast]
 
@@ -231,16 +245,45 @@ class Cologne:
                 or bool(re.match(r"^of (?:a |an |the )?[A-ZĀĪŪṚṢŚ]", b))
                 or bool(re.search(r"\bn\. of a (?:well-known )?Bodhisattva\b", b)))
 
+    @staticmethod
+    def senseless(body: str) -> bool:
+        """An entry that gives the headword no sense of its own: one Edgerton brackets (a reading he rejects), or a bare
+        cross-reference (the headword, at most a form or a label, then ``see …``), or Monier-Williams' line of cognates."""
+        return body.startswith("[") or bool(_SEE_ONLY.match(body)) or bool(_ETYMOLOGY.match(body))
+
+    def entry_text(self, iast: str, keep) -> str:
+        """The shortened text of the headword's first entry that ``keep`` accepts, or nothing."""
+        return next((self.shorten(r["body"]) for r in self.lookup(iast) if keep(r)), "")
+
+    def name_meaning(self, iast: str) -> str:
+        """The text of the headword's first proper-name entry (Subhūti the disciple, not subhūti "well-being")."""
+        return self.entry_text(iast, lambda r: self.is_name_body(r["body"]))
+
+    @staticmethod
+    def negation_of(row) -> str:
+        """``utpanna`` when the entry is Monier-Williams' ``an-utpanna`` (the headword written ``a-`` or ``an-`` and the rest),
+        else nothing."""
+        if row["source"] != "mw":
+            return ""
+        m = re.match(r"^(?:a|an)-(.+)$", (row["k2"] or "").replace("/", "").replace("\\", ""))
+        return m.group(1) if m else ""
+
     def is_name(self, iast: str) -> bool:
         """The dictionaries know the headword only as a proper name (Subhūti, Anāthapiṇḍada)."""
         rows = [r for r in self.lookup(iast) if r["source"] != "ap90"]
         return bool(rows) and all(self.is_name_body(r["body"]) for r in rows)
 
-    def genders(self, iast: str) -> set[str]:
+    def genders(self, iast: str) -> frozenset[str]:
         """The genders (or ``adj``/``ind``) the dictionaries give the headword: Edgerton's where he gives any (with
         Monier-Williams' ``adj`` beside them: parama is an adjective as well as his "high number"), else
         Monier-Williams' (``lakṣaṇa n.`` and ``mfn.``, ``caryā f.``), as ``{"masc", "nt", "adj"}``; a word the
-        dictionaries know only as a name (Subhūti) has the name's gender."""
+        dictionaries know only as a name (Subhūti) has the name's gender. Asked of the same stems hundreds of
+        thousands of times in a scan, so it is kept (read-only)."""
+        if iast not in self._genders_cache:
+            self._genders_cache[iast] = frozenset(self._genders_of(iast))
+        return self._genders_cache[iast]
+
+    def _genders_of(self, iast: str) -> set[str]:
         rows = self.lookup(iast)
         mw: set[str] = set()
         for r in rows:
@@ -248,7 +291,8 @@ class Cologne:
                 m = _GENDER_MW.match(r["body"])
                 if m:
                     mw.update(_g(m.group(1)).split())
-        bhs = [r for r in rows if r["source"] == "bhs" and not self.is_name_body(r["body"])]
+        bhs = [r for r in rows if r["source"] == "bhs" and not self.is_name_body(r["body"])
+               and not r["body"].startswith("[")]                   # [niravadya, nt. …]: a reading Edgerton rejects gives no gender
         if bhs:                                                     # Edgerton's first (primary) entry only
             m = _GENDER_BHS.match(bhs[0]["body"])
             if m:
@@ -267,6 +311,8 @@ class Cologne:
         for r in self.lookup(iast):
             if r["source"] != "mw":
                 continue
+            if self.senseless(r["body"]):
+                continue                                        # a line of cognates or a cross-reference is no sense under a gender
             m = _GENDER_MW.match(r["body"])
             if m:
                 current = [] if self.is_name_body(r["body"]) else _g(m.group(1)).split()
@@ -292,6 +338,17 @@ class Cologne:
         nominal = any(r["source"] == "bhs" and not _ROOT.match(r["body"]) or _GENDER_MW.match(r["body"]) for r in rows)
         return not nominal and any(_ROOT.match(r["body"]) for r in rows)
 
+    def feminine_in_i(self, iast: str) -> bool:
+        """Monier-Williams gives the adjective's feminine in ``-ī``: ``puraḥ—sara mf(ī)n.``."""
+        return any(r["source"] == "mw" and (m := _GENDER_MW.match(r["body"])) and m.group(1).startswith("mf(") and "ī" in m.group(1)
+                   for r in self.lookup(iast))
+
+    def root_citing(self, root: str, present: str) -> str:
+        """The text of the root's entry that cites ``present`` as its third-singular present (of the homonyms ``1. mā``
+        … ``4. mā`` the one with ``māti``), or nothing."""
+        cited = re.compile(rf"(?<![\w-]){re.escape(present)}(?!\w)")
+        return self.entry_text(root, lambda r: r["source"] == "mw" and not _GENDER_MW.match(r["body"]) and cited.search(r["body"][:120]))
+
     def is_letter(self, iast: str) -> bool:
         """A headword that is a letter of the alphabet (``cha the 7th consonant``), not a word."""
         rows = self.lookup(iast)
@@ -312,10 +369,37 @@ class Cologne:
 
     def meaning(self, iast: str, limit: int = 300) -> str:
         """A short gloss: the first entry's text, cut at a sentence or clause end."""
+        if (iast, limit) not in self._meaning_cache:
+            self._meaning_cache[iast, limit] = self._meaning_of(iast, limit)
+        return self._meaning_cache[iast, limit]
+
+    def _meaning_of(self, iast: str, limit: int) -> str:
         rows = self.lookup(iast)
         if not rows:
             return ""
-        text = rows[0]["body"]
+        # the first entry, unless it has no sense of its own and a later entry of the same kind (word or name) has one:
+        # Edgerton's bracketed entry is a reading he rejects ("[niravadya, nt., a high number …]"), "niṣprapañca, see
+        # prapañca." and Monier-Williams' "kṛpā (ā), f., see s.v. below." only point elsewhere
+        name = self.is_name_body(rows[0]["body"])
+        kin = [r for r in rows if self.is_name_body(r["body"]) == name]
+        first = next((r for r in kin if not self.senseless(r["body"])), rows[0])
+        if first["source"] == "mw" and _HOMONYM.match(first["body"]):
+            # "1. anya n. inexhaustibleness" (one short line) before "2. anya other, different" (a column): where Monier-Williams
+            # has only a line for his first homonym and a column for another, the other is the commoner word
+            groups: list[list[sqlite3.Row]] = []
+            for r in (r for r in kin if r["source"] == "mw"):
+                if _HOMONYM.match(r["body"]) or not groups:
+                    groups.append([])
+                groups[-1].append(r)
+            own = next(g for g in groups if first in g)              # first is a Monier-Williams row of kin: in a group
+            best = max(groups, key=len)                              # the first of the largest
+            if len(own) == 1 and len(first["body"]) < 120 and len(best) > 1:
+                first = next((r for r in best if not self.senseless(r["body"])), first)
+        return self.shorten(first["body"], limit)
+
+    @staticmethod
+    def shorten(text: str, limit: int = 300) -> str:
+        """An entry's text cut at a sentence or clause end."""
         if len(text) > limit:
             cut = text[:limit]
             for sep in (". ", "; "):
